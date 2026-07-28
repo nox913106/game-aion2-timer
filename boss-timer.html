@@ -98,6 +98,15 @@ h1 span{color:var(--muted);font-size:12px;letter-spacing:.2em;display:block;marg
 .hero.state-soon .big{color:var(--amber)}
 .hero.state-now .big{color:var(--coral)}
 .hero .track{height:4px;background:var(--track);border-radius:99px;overflow:hidden;margin-top:16px}
+.herokill{position:absolute;top:16px;right:16px;z-index:2;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:11px 18px;min-height:52px;border-radius:10px;
+  border:1px solid var(--coral);color:var(--coral);font-size:15px;font-weight:700;
+  letter-spacing:.04em;background:transparent}
+.herokill span{font-size:10px;font-weight:400;letter-spacing:.12em;opacity:.75}
+.herokill:hover{background:var(--coral);color:#fff;border-color:var(--coral)}
+.herokill:active{transform:scale(.97)}
+.hero .name,.hero .at{padding-right:120px}
 .hero .fill{height:100%;width:0;background:var(--jade);transition:width .4s linear}
 .hero.state-soon .fill{background:var(--amber)}
 .hero.state-now .fill{background:var(--coral)}
@@ -181,6 +190,9 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 .empty{border:1px dashed var(--edge);border-radius:12px;padding:26px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.7}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--toast-fill);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--edge);padding:10px 16px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
 .toast.show{opacity:1;pointer-events:auto;cursor:pointer}
+.toast .undo{margin-left:12px;padding:4px 12px;font-size:12px;border-radius:99px;
+  border:1px solid var(--jade);color:var(--jade);min-height:30px}
+.toast .undo:hover{background:var(--jade);color:#0C1F18}
 /* ── 再下一個：小卡（僅窄螢幕顯示）── */
 .upnext{border:1px solid var(--edge);border-radius:12px;padding:12px 14px;margin:-10px 0 20px;
   background:var(--fill-1);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none}
@@ -206,6 +218,8 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 
 /* ── 窄螢幕：拆成「倒數」與「設定」兩個檢視 ── */
 @media (max-width:900px){
+  .herokill{top:14px;right:14px;padding:12px 18px;min-height:56px;font-size:16px}
+  .hero .name,.hero .at{padding-right:112px}
   .rtbig{font-size:30px;padding:13px 8px}
   .editacts{gap:8px}
   .editacts button{flex:1;min-height:46px}
@@ -228,6 +242,8 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   h1 span{font-size:10px}
 }
 @media (max-width:380px){
+  .herokill{padding:10px 14px;min-height:50px;font-size:15px}
+  .hero .name,.hero .at{padding-right:96px}
   .upcount{font-size:17px}
   .upname{font-size:17px}
 }
@@ -260,6 +276,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   </div>
 
   <div class="hero state-far sec-timer" id="hero">
+    <button class="herokill" id="heroKill" hidden>已擊殺<span>重新計時</span></button>
     <div class="eyebrow">下一行程</div>
     <div class="name" id="heroName">載入中…</div>
     <div class="at" id="heroAt">&nbsp;</div>
@@ -754,6 +771,9 @@ function tick(){
         ? (head.b.cat === 'event' ? '已經開始了' : '已經重生，快去')
         : (head.b.loc ? head.b.loc + ' · ' : '') + clockOf(head.ns);
     document.getElementById('heroCount').textContent = fmt(head.left);
+    const kb = document.getElementById('heroKill');
+    kb.hidden = head.b.mode !== 'interval';      // 固定排程的活動沒有擊殺的概念
+    kb.dataset.id = head.b.id;
     document.getElementById('heroFill').style.width =
       (Math.max(0, Math.min(1, 1 - head.left / cycleMs(head.b)))*100) + '%';
   }else{
@@ -764,6 +784,7 @@ function tick(){
       state.bosses.length ? '勾選清單左邊的方框，就會在這裡倒數' : '載入預設行程或自己新增一項';
     document.getElementById('heroCount').textContent = '--:--:--';
     document.getElementById('heroFill').style.width = '0%';
+    document.getElementById('heroKill').hidden = true;
   }
 }
 
@@ -1225,14 +1246,46 @@ document.getElementById('toast').addEventListener('click', ()=>{
   document.getElementById('toast').classList.remove('show');
 });
 let toastTimer = null;
-function toast(msg){
+function toast(msg, action){
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
+  t.textContent = msg;
+  if(action){
+    const b = document.createElement('button');
+    b.className = 'undo';
+    b.textContent = action.label;
+    b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      action.fn();
+      t.classList.remove('show');
+    });
+    t.appendChild(b);
+  }
+  t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> t.classList.remove('show'), 5000);
 }
 
 /* ---------- 互動 ---------- */
+/* 主卡片上的「已擊殺」：一鍵重置目前這一隻的倒數 */
+document.getElementById('heroKill').addEventListener('click', e=>{
+  const b = state.bosses.find(x => x.id === e.currentTarget.dataset.id);
+  if(!b || b.mode !== 'interval') return;
+  const prev = b.lastKill;                      // 記下舊值，誤按可以還原
+  b.lastKill = Date.now();
+  b.fired = []; b.firedFor = null;
+  save(); render(); tick();
+  toast(`${b.name} 已重新計時`, {
+    label: '復原',
+    fn: ()=>{
+      b.lastKill = prev;
+      b.fired = []; b.firedFor = null;
+      save(); render(); tick();
+      toast(`${b.name} 已還原`);
+    }
+  });
+});
+
+
 /* 校時欄位的讀值與即時預覽 */
 function readRemain(box, b){
   const el = box.querySelector('[data-rt]');
