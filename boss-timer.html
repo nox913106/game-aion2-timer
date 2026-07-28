@@ -301,6 +301,30 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .upname{font-size:17px}
 }
 @media (max-width:520px){.grid{grid-template-columns:1fr}}
+/* ── 倒數緊迫度：依絕對剩餘時間閃光 ──
+   10 分內黃、5 分內橘、1 分內紅，越急促閃得越快。
+   邊框顏色是靜態的，因此在「減少動態效果」的偏好下仍看得出級別。 */
+@keyframes glowY{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,216,77,0)}
+  50%    {box-shadow:0 0 20px 2px rgba(255,216,77,.38)}
+}
+@keyframes glowO{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,154,60,0)}
+  50%    {box-shadow:0 0 24px 3px rgba(255,154,60,.46)}
+}
+@keyframes glowR{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,77,94,.05)}
+  50%    {box-shadow:0 0 30px 5px rgba(255,77,94,.60)}
+}
+.hero.u10,.upnext.u10{border-color:rgba(255,216,77,.75);animation:glowY 1.9s ease-in-out infinite}
+.hero.u5 ,.upnext.u5 {border-color:rgba(255,154,60,.85);animation:glowO 1.2s ease-in-out infinite}
+.hero.u1 ,.upnext.u1 {border-color:rgba(255,77,94,.95); animation:glowR .68s ease-in-out infinite}
+.upnext.u10{border-left-color:rgba(255,216,77,.95)}
+.upnext.u5 {border-left-color:rgba(255,154,60,1)}
+.upnext.u1 {border-left-color:rgba(255,77,94,1)}
+/* 主卡片原本在「已重生」時有內框脈動，與閃光疊在一起會太吵 */
+.hero.u1::after,.hero.u5::after,.hero.u10::after{display:none}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ── 已擊殺按鈕：依「卡片寬度」而非螢幕寬度縮放 ──
@@ -583,7 +607,7 @@ const PRESET = [
   { cat:'boss', name:'神器戰爭 BOSS', loc:'神器戰爭開始 20 分後', mode:'weekly', days:[3,6], times:['22:30'] },
 
   { cat:'event', name:'神器戰爭', loc:'深淵', mode:'weekly', days:[3,6], times:['22:10'], leads:[40,30,0] },
-  { cat:'event', name:'深淵裂縫戰爭', loc:'深淵', mode:'weekly', days:[2,4], times:['22:00'], leads:[30,20,0] },
+  { cat:'event', name:'深淵裂縫地帶', loc:'深淵', mode:'weekly', days:[2,4], times:['22:00'], leads:[30,20,0] },
   { cat:'event', name:'樹古慶典', loc:'每整點', mode:'hourly', minute:0 },
   { cat:'event', name:'次元進攻', loc:'每整點半', mode:'hourly', minute:30 },
   { cat:'event', name:'天魔裂縫', loc:'每 3 小時一場', mode:'schedule',
@@ -621,9 +645,10 @@ async function load(){
     const r = await store.get(KEY);
     if(r && r.value) state = Object.assign(state, JSON.parse(r.value));
   }catch(e){ storeMode = 'none'; }
-  const EVENT_NAMES = ['神器戰爭','深淵裂縫戰爭','樹古慶典','次元進攻','次元裂縫','天魔裂縫'];
+  const EVENT_NAMES = ['神器戰爭','深淵裂縫地帶','深淵裂縫戰爭','樹古慶典','次元進攻','次元裂縫','天魔裂縫'];
   for(const b of state.bosses){
     if(b.name === '次元裂縫') b.name = '次元進攻';        // 舊存檔自動改名
+    if(b.name === '深淵裂縫戰爭') b.name = '深淵裂縫地帶';
     if(!b.cat) b.cat = EVENT_NAMES.includes(b.name) ? 'event' : 'boss';
     if(b.name === '監視者卡伊拉' && b.mode !== 'hourly'){
       // 還原為固定每整點。方向只有這一條，避免與其他規則互相抵銷。
@@ -770,6 +795,13 @@ function leadText(b, ns){
 function effectiveLeads(b){
   return (Array.isArray(b.leads) && b.leads.length) ? b.leads : state.leads;
 }
+// 剩餘時間的緊迫等級，與提醒設定無關，純粹看還剩多久
+function urgency(left){
+  if(left < 60*1000)     return ' u1';    // 一分鐘內：紅
+  if(left < 5*60*1000)   return ' u5';    // 五分鐘內：橘
+  if(left < 10*60*1000)  return ' u10';   // 十分鐘內：黃
+  return '';
+}
 function stateOf(b, left){
   if(left <= 0) return 'now';
   if(left <= (Math.max(0, ...effectiveLeads(b)) || 5)*60*1000) return 'soon';
@@ -843,7 +875,7 @@ function render(){
   }
 }
 
-const LABELS = { same:'同時', next:'再下一個', lead:'即將提醒' };
+const LABELS = { same:'同時', next:'再下一個', soon:'一小時內', lead:'即將提醒' };
 let cardsSig = '';
 function renderCards(cards){
   const wrap = document.getElementById('cards');
@@ -873,7 +905,7 @@ function renderCards(cards){
   cards.forEach((c, i) => {
     const el = wrap.children[i];
     if(!el) return;
-    el.className = 'upnext state-' + c.x.st;
+    el.className = 'upnext state-' + c.x.st + urgency(c.x.left);
     el.querySelector('.upcount').textContent = fmt(c.x.left);
     const b = c.x.b;
     let at = (b.loc ? b.loc + ' · ' : '') + clockOf(c.x.ns);
@@ -925,28 +957,31 @@ function tick(){
   active.sort((a, b2) => a.ns - b2.ns);
 
   // 決定要顯示哪些卡片：
-  //  同時   —— 與主卡片同一時刻的其他項目（常見於整點撞在一起）
-  //  再下一個 —— 第一個「時刻更晚」的項目，不是陣列的第二個
+  //  同時    —— 與主卡片同一時刻的其他項目（常見於整點撞在一起）
+  //  再下一個 —— 第一個「時刻更晚」的項目
+  //  一小時內 —— 不分王或活動，只要一小時內就先擺上來
   //  即將提醒 —— 有獨立提醒設定的活動，第一則提醒將在一小時內發生
   const cards = [];
   if(head){
-    active.forEach(x => {
-      if(x.b.id !== head.b.id && x.ns === head.ns) cards.push({ kind:'same', x });
-    });
+    const seen = new Set([head.b.id]);
+    const add = (kind, x) => { if(!seen.has(x.b.id)){ seen.add(x.b.id); cards.push({ kind, x }); } };
+
+    active.forEach(x => { if(x.ns === head.ns) add('same', x); });
     const second = active.find(x => x.ns > head.ns);
-    if(second) cards.push({ kind:'next', x:second });
+    if(second) add('next', second);
+    active.forEach(x => { if(x.left < 3600*1000) add('soon', x); });
     active.forEach(x => {
       if(!Array.isArray(x.b.leads) || !x.b.leads.length) return;
-      if(x.b.id === head.b.id || cards.some(c => c.x.b.id === x.b.id)) return;
       const maxLead = Math.max(...x.b.leads) * 60000;
-      if(x.left - maxLead <= 3600*1000) cards.push({ kind:'lead', x });
+      if(x.left - maxLead <= 3600*1000) add('lead', x);
     });
+    cards.sort((a, b2) => a.x.ns - b2.x.ns);
   }
   renderCards(cards);
 
   const hero = document.getElementById('hero');
   if(head){
-    hero.className = 'hero state-' + head.st;
+    hero.className = 'hero sec-timer state-' + head.st + urgency(head.left);
     document.getElementById('heroName').textContent = head.b.name;
     document.getElementById('heroAt').textContent =
       head.left <= 0
@@ -959,7 +994,7 @@ function tick(){
     document.getElementById('heroFill').style.width =
       (Math.max(0, Math.min(1, 1 - head.left / cycleMs(head.b)))*100) + '%';
   }else{
-    hero.className = 'hero state-far';
+    hero.className = 'hero sec-timer state-far';
     document.getElementById('heroName').textContent =
       state.bosses.length ? '沒有勾選任何提醒' : '目前沒有追蹤中的 BOSS';
     document.getElementById('heroAt').textContent =
