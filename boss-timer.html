@@ -50,6 +50,10 @@
   --glow:radial-gradient(1100px 620px at 78% -12%, rgba(150,120,200,.20) 0%, transparent 62%);
 }
 *{box-sizing:border-box}
+/* 瀏覽器內建的 [hidden]{display:none} 優先權極低，
+   任何 .class{display:...} 都會蓋掉它，導致 JS 設了 hidden 卻沒作用。
+   統一在這裡補一條高優先權的規則。 */
+[hidden]{display:none !important}
 button,input,select,.onbox{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{
