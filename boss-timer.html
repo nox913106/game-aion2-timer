@@ -572,7 +572,7 @@ let pickedDays = [6, 0];
 let saveTimer = null;
 
 const PRESET = [
-  { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'interval', hours:1 },
+  { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'hourly', minute:0 },
   { cat:'boss', name:'精靈王阿格羅', loc:'希埃爾之翼群島／希埃爾右翼', mode:'interval', hours:24 },
   { cat:'boss', name:'守護神將納赫瑪', loc:'艾雷修藍塔之根', mode:'weekly', days:[5,0], times:['22:00'] },
   { cat:'boss', name:'神器戰爭 BOSS', loc:'神器戰爭開始 20 分後', mode:'weekly', days:[3,6], times:['22:30'] },
@@ -620,20 +620,12 @@ async function load(){
   for(const b of state.bosses){
     if(b.name === '次元裂縫') b.name = '次元進攻';        // 舊存檔自動改名
     if(!b.cat) b.cat = EVENT_NAMES.includes(b.name) ? 'event' : 'boss';
-    if(b.name === '監視者卡伊拉' && b.mode === 'hourly'){
-      // 從「每整點」改為「擊殺後 1 小時」。
-      // 反推 lastKill，讓下次重生時刻與原本一致，切換當下不會跳動。
-      const d = new Date(); d.setMinutes(b.minute || 0, 0, 0);
-      if(d.getTime() <= Date.now()) d.setHours(d.getHours() + 1);
-      b.mode = 'interval';
-      b.intervalMs = 3600*1000;
-      b.lastKill = d.getTime() - b.intervalMs;
-      delete b.minute;
+    if(b.name === '監視者卡伊拉' && b.mode !== 'hourly'){
+      // 還原為固定每整點。方向只有這一條，避免與其他規則互相抵銷。
+      b.mode = 'hourly';
+      b.minute = 0;
+      delete b.intervalMs; delete b.lastKill;
       b.fired = []; b.firedFor = null;
-    }
-    if(b.name === '監視者卡伊拉' && b.mode === 'interval' && !b.intervalMs){
-      b.intervalMs = 3600*1000;
-      b.lastKill = b.lastKill || Date.now();
     }
     if(b.name === '守護神將納赫瑪' && b.mode === 'weekly'
        && String(b.days) === '6,0' && String(b.times) === '21:00'){
