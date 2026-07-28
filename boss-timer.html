@@ -12,6 +12,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
+  --vh:1vh;              /* 由 JS 依實際可視高度覆寫，見 syncViewport() */
+  --tabh:56px;           /* 底部分頁列高度 */
   --ink:#150E1E; --panel:#1E1429; --panel-2:#261A33; --edge:#3A2B4B;
   color-scheme:dark;
   --fill-1:rgba(30,20,41,.78);        /* 清單列 */
@@ -51,10 +53,17 @@
 button,input,select,.onbox{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{
-  color:var(--paper); font-family:var(--body); padding:20px 16px 64px;
+  color:var(--paper); font-family:var(--body);
   background:var(--ink);
+  /* 用了 viewport-fit=cover，內容必須自己避開瀏海與圓角。
+     橫式時瀏海在左側或右側，靠 inset-left / inset-right 推開。 */
+  padding-top:max(20px, env(safe-area-inset-top));
+  padding-left:max(16px, env(safe-area-inset-left));
+  padding-right:max(16px, env(safe-area-inset-right));
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
   min-height:100vh;
-  min-height:100dvh;              /* Android 網址列收合時不會整頁跳動 */
+  min-height:100dvh;                        /* 支援時優先用動態視窗高度 */
+  min-height:calc(var(--vh) * 100);         /* JS 實測值，最準確 */
   overscroll-behavior-y:contain;  /* 擋掉下拉重新整理，捲清單不會誤觸 */
 }
 /* 背景圖固定不捲動，上面壓一層暗色遮罩維持文字對比 */
@@ -193,7 +202,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 .settings span{display:inline-flex;align-items:center;cursor:pointer}
 .settings label{display:inline;letter-spacing:0;text-transform:none;font-size:14px;margin:0;cursor:pointer}
 .empty{border:1px dashed var(--edge);border-radius:12px;padding:26px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.7}
-.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--toast-fill);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--edge);padding:10px 16px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--toast-fill);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--edge);padding:10px 16px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
 .toast.show{opacity:1;pointer-events:auto;cursor:pointer}
 .toast .undo{margin-left:12px;padding:4px 12px;font-size:12px;border-radius:99px;
   border:1px solid var(--jade);color:var(--jade);min-height:30px}
@@ -213,7 +222,9 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 .tabbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:20;
   border-top:1px solid var(--edge);background:var(--toast-fill);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  padding-bottom:env(safe-area-inset-bottom)}
+  padding-bottom:env(safe-area-inset-bottom);
+  padding-left:env(safe-area-inset-left);
+  padding-right:env(safe-area-inset-right)}
 .tabbar button{flex:1;border:0;border-radius:0;background:transparent;color:var(--muted);
   display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 8px;font-size:11px;
   letter-spacing:.06em}
@@ -228,6 +239,11 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
    - max-height:600px→ 手機橫式這種矮視窗
    單用寬度判斷會漏掉大尺寸手機橫式（932px）與平板橫式。 */
 @media (pointer:coarse), (max-width:900px), (max-height:600px){
+  body{
+    padding-bottom:calc(var(--tabh) + env(safe-area-inset-bottom) + 16px);
+    padding-left:calc(16px + env(safe-area-inset-left));
+    padding-right:calc(16px + env(safe-area-inset-right));
+  }
   /* Android 的觸控目標建議為 48dp，iOS 為 44pt，取大者 */
   .seg button{padding:11px 14px;min-height:48px}
   .seg button svg{width:19px;height:19px}
@@ -240,7 +256,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .acts button{min-height:38px;padding:7px 12px}
   .onbox{width:22px;height:22px}
   .cols{grid-template-columns:1fr;gap:14px}
-  body{padding-bottom:88px}
+  body{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
   .tabbar{display:flex}
   .upnext{display:block}
   body[data-view="timer"] .sec-config{display:none}
@@ -298,23 +314,22 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
    寬而矮的形狀不該再由上往下堆內容，否則右側整片留白、卡片被撐高。
    主卡片內部改為格線：左邊名稱、中間倒數、右邊按鈕，進度條橫跨底部。 */
 @media (orientation:landscape) and (max-height:600px){
-  body{padding:12px 14px 76px}
+  /* 橫式時瀏海位於左右兩側，這裡必須沿用 env()，
+     否則固定留白會蓋掉安全區，內容就被瀏海切掉。 */
+  body{
+    padding-top:max(12px, env(safe-area-inset-top));
+    padding-left:max(14px, env(safe-area-inset-left));
+    padding-right:max(14px, env(safe-area-inset-right));
+    padding-bottom:calc(76px + env(safe-area-inset-bottom));
+  }
   .top{margin-bottom:10px}
   h1{font-size:19px}
   h1 span{display:none}
   .bicon{width:34px;height:34px}
   .clock{font-size:12px}
 
-  body[data-view="timer"] .wrap{
-    display:grid;
-    grid-template-columns:1.55fr 1fr;
-    column-gap:14px;
-    align-items:stretch;
-  }
-  body[data-view="timer"] .top{grid-column:1 / -1}
-
   body[data-view="timer"] .hero{
-    margin-bottom:0;
+    margin-bottom:12px;
     padding:14px 18px 12px;
     display:grid;
     grid-template-columns:minmax(0,1fr) auto auto;
@@ -327,28 +342,27 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
     column-gap:16px;
   }
   body[data-view="timer"] .hero .eyebrow{grid-area:eyebrow;align-self:end}
-  body[data-view="timer"] .hero .name{grid-area:name;padding-right:0;font-size:clamp(20px,5.2vh,30px)}
+  body[data-view="timer"] .hero .name{grid-area:name;padding-right:0;font-size:clamp(19px, calc(var(--vh) * 5), 28px)}
   body[data-view="timer"] .hero .at{grid-area:at;padding-right:0;align-self:start}
   body[data-view="timer"] .hero .big{
     grid-area:big;margin:0;justify-self:end;
-    font-size:clamp(34px,10.5vh,62px);
+    font-size:clamp(32px, calc(var(--vh) * 10), 58px);
   }
   body[data-view="timer"] .hero .track{grid-area:track;margin-top:12px}
   body[data-view="timer"] .herokill{
     grid-area:kill;position:static;
     align-self:center;justify-self:end;
-    min-height:clamp(46px,13vh,64px);
-    font-size:clamp(14px,3.6vh,18px);
+    min-height:clamp(46px, calc(var(--vh) * 12.5), 62px);
+    font-size:clamp(14px, calc(var(--vh) * 3.5), 18px);
     padding:8px 16px;
   }
 
-  /* 右欄跟著主卡片等高，內容垂直置中，不再有懸空的空白 */
   body[data-view="timer"] .upnext{
-    margin:0;display:flex;flex-direction:column;justify-content:center;
-    padding:14px 16px;
+    margin:0;
+    padding:12px 16px;
   }
-  .upname{font-size:clamp(17px,4.6vh,24px)}
-  .upcount{font-size:clamp(16px,4.4vh,24px)}
+  .upname{font-size:clamp(17px, calc(var(--vh) * 4.4), 23px)}
+  .upcount{font-size:clamp(16px, calc(var(--vh) * 4.2), 23px)}
 
   .tabbar button{padding:6px 0 5px;font-size:10px;min-height:46px}
   .tabbar button svg{width:18px;height:18px}
@@ -356,7 +370,12 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 
 /* 更矮的視窗（一般手機橫式約 390px 高）再壓一級 */
 @media (orientation:landscape) and (max-height:440px){
-  body{padding:8px 12px 64px}
+  body{
+    padding-top:max(8px, env(safe-area-inset-top));
+    padding-left:max(12px, env(safe-area-inset-left));
+    padding-right:max(12px, env(safe-area-inset-right));
+    padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  }
   .top{margin-bottom:6px}
   h1{font-size:17px}
   body[data-view="timer"] .hero{padding:10px 14px 9px}
