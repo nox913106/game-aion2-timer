@@ -212,8 +212,18 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   border:1px solid var(--jade);color:var(--jade);min-height:30px}
 .toast .undo:hover{background:var(--jade);color:#0C1F18}
 /* ── 再下一個：小卡（僅窄螢幕顯示）── */
-.upnext{border:1px solid var(--edge);border-radius:12px;padding:12px 14px;margin:-10px 0 20px;
-  background:var(--fill-1);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none}
+.cards{display:none;flex-direction:column;gap:10px;margin:-10px 0 20px}
+.upnext{border:1px solid var(--edge);border-left:3px solid var(--edge);border-radius:12px;
+  padding:12px 14px;background:var(--fill-1);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.upnext.state-far{border-left-color:var(--jade)}
+.upnext.state-soon{border-left-color:var(--amber)}
+.upnext.state-now{border-left-color:var(--coral)}
+.upnext.state-far .upcount{color:var(--jade)}
+.upnext.state-soon .upcount{color:var(--amber)}
+.upnext.state-now .upcount{color:var(--coral)}
+.uplabel-same{color:var(--coral)}
+.uplabel-lead{color:var(--amber)}
 .uplabel{font-size:10px;letter-spacing:.24em;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
 .uprow{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .upmain{min-width:0}
@@ -262,7 +272,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .cols{grid-template-columns:1fr;gap:14px}
   body{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
   .tabbar{display:flex}
-  .upnext{display:block}
+  .cards{display:flex}
   body[data-view="timer"] .sec-config{display:none}
   body[data-view="config"] .sec-timer{display:none}
 
@@ -423,16 +433,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
     <div class="track"><div class="fill" id="heroFill"></div></div>
   </div>
 
-  <div class="upnext sec-timer" id="upnext" hidden>
-    <div class="uplabel">再下一個</div>
-    <div class="uprow">
-      <div class="upmain">
-        <div class="upname" id="upName">—</div>
-        <div class="upat" id="upAt"></div>
-      </div>
-      <div class="upcount" id="upCount">--:--:--</div>
-    </div>
-  </div>
+  <div class="cards sec-timer" id="cards"></div>
 
   <div class="rowhead sec-config">
     <h2>追蹤清單</h2>
@@ -842,6 +843,48 @@ function render(){
   }
 }
 
+const LABELS = { same:'同時', next:'再下一個', lead:'即將提醒' };
+let cardsSig = '';
+function renderCards(cards){
+  const wrap = document.getElementById('cards');
+  const sig = cards.map(c => c.kind + ':' + c.x.b.id).join('|');
+  if(sig !== cardsSig){
+    cardsSig = sig;
+    wrap.innerHTML = '';
+    for(const c of cards){
+      const el = document.createElement('div');
+      el.className = 'upnext';
+      el.dataset.id = c.x.b.id;
+      el.innerHTML = `
+        <div class="uplabel uplabel-${c.kind}"></div>
+        <div class="uprow">
+          <div class="upmain">
+            <div class="upname"></div>
+            <div class="upat"></div>
+          </div>
+          <div class="upcount">--:--:--</div>
+        </div>`;
+      el.querySelector('.uplabel').textContent = LABELS[c.kind];
+      el.querySelector('.upname').textContent = c.x.b.name;
+      wrap.appendChild(el);
+    }
+  }
+  // 每秒更新的部分
+  cards.forEach((c, i) => {
+    const el = wrap.children[i];
+    if(!el) return;
+    el.className = 'upnext state-' + c.x.st;
+    el.querySelector('.upcount').textContent = fmt(c.x.left);
+    const b = c.x.b;
+    let at = (b.loc ? b.loc + ' · ' : '') + clockOf(c.x.ns);
+    if(c.kind === 'lead'){
+      const t = leadText(b, c.x.ns).replace(' · ', '');
+      if(t) at += '　' + t.trim();
+    }
+    el.querySelector('.upat').textContent = at;
+  });
+}
+
 function tick(){
   const now = Date.now();
   const p = n => String(n).padStart(2,'0');
@@ -879,19 +922,27 @@ function tick(){
   }
   fireBatch(due);
 
-  // 「再下一個」：排序後的第二名
   active.sort((a, b2) => a.ns - b2.ns);
-  const second = active[1];
-  const upEl = document.getElementById('upnext');
-  if(second){
-    upEl.hidden = false;
-    document.getElementById('upName').textContent = second.b.name;
-    document.getElementById('upAt').textContent =
-      (second.b.loc ? second.b.loc + ' · ' : '') + clockOf(second.ns);
-    document.getElementById('upCount').textContent = fmt(second.left);
-  }else{
-    upEl.hidden = true;
+
+  // 決定要顯示哪些卡片：
+  //  同時   —— 與主卡片同一時刻的其他項目（常見於整點撞在一起）
+  //  再下一個 —— 第一個「時刻更晚」的項目，不是陣列的第二個
+  //  即將提醒 —— 有獨立提醒設定的活動，第一則提醒將在一小時內發生
+  const cards = [];
+  if(head){
+    active.forEach(x => {
+      if(x.b.id !== head.b.id && x.ns === head.ns) cards.push({ kind:'same', x });
+    });
+    const second = active.find(x => x.ns > head.ns);
+    if(second) cards.push({ kind:'next', x:second });
+    active.forEach(x => {
+      if(!Array.isArray(x.b.leads) || !x.b.leads.length) return;
+      if(x.b.id === head.b.id || cards.some(c => c.x.b.id === x.b.id)) return;
+      const maxLead = Math.max(...x.b.leads) * 60000;
+      if(x.left - maxLead <= 3600*1000) cards.push({ kind:'lead', x });
+    });
   }
+  renderCards(cards);
 
   const hero = document.getElementById('hero');
   if(head){
