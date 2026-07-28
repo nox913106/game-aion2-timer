@@ -137,12 +137,16 @@ li.boss.state-now .bcount{color:var(--coral)}
 .line2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
 .meta{font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.5}
 .rtrow{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.rtbig{font-family:var(--mono);font-size:26px;text-align:center;letter-spacing:.06em;
+  padding:10px 8px;font-variant-numeric:tabular-nums}
+.rtpreview{font-size:12px;font-family:var(--mono);color:var(--jade)}
+.rtpreview.warn{color:var(--coral)}
 .rtlabel{font-size:11px;color:var(--muted);width:100%}
 input.rt{width:62px;text-align:center;font-family:var(--mono);padding:6px 4px}
 .editrow{margin-top:10px;padding-top:10px;border-top:1px dashed var(--edge);display:flex;flex-direction:column;gap:8px}
 .editrow input{font-family:var(--mono)}
 .editacts{display:flex;gap:6px;flex-wrap:wrap}
-.editacts button{padding:5px 10px;font-size:12px}
+.editacts button{padding:9px 16px;font-size:13px;min-height:40px}
 .acts{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 .acts button{padding:4px 9px;font-size:12px}
 
@@ -202,6 +206,11 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 
 /* ── 窄螢幕：拆成「倒數」與「設定」兩個檢視 ── */
 @media (max-width:900px){
+  .rtbig{font-size:30px;padding:13px 8px}
+  .editacts{gap:8px}
+  .editacts button{flex:1;min-height:46px}
+  .acts button{min-height:38px;padding:7px 12px}
+  .onbox{width:22px;height:22px}
   .cols{grid-template-columns:1fr;gap:14px}
   body{padding-bottom:88px}
   .tabbar{display:flex}
@@ -411,7 +420,7 @@ let pickedDays = [6, 0];
 let saveTimer = null;
 
 const PRESET = [
-  { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'hourly', minute:0 },
+  { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'interval', hours:1 },
   { cat:'boss', name:'精靈王阿格羅', loc:'希埃爾之翼群島／希埃爾右翼', mode:'interval', hours:24 },
   { cat:'boss', name:'守護神將納赫瑪', loc:'艾雷修藍塔之根', mode:'weekly', days:[5,0], times:['22:00'] },
   { cat:'boss', name:'神器戰爭 BOSS', loc:'神器戰爭開始 20 分後', mode:'weekly', days:[3,6], times:['22:30'] },
@@ -459,9 +468,20 @@ async function load(){
   for(const b of state.bosses){
     if(b.name === '次元裂縫') b.name = '次元進攻';        // 舊存檔自動改名
     if(!b.cat) b.cat = EVENT_NAMES.includes(b.name) ? 'event' : 'boss';
-    if(b.name === '監視者卡伊拉' && b.mode === 'interval'){
-      b.mode = 'hourly'; b.minute = 0; b.warned = b.spawned = null;
-      delete b.intervalMs; delete b.lastKill;
+    if(b.name === '監視者卡伊拉' && b.mode === 'hourly'){
+      // 從「每整點」改為「擊殺後 1 小時」。
+      // 反推 lastKill，讓下次重生時刻與原本一致，切換當下不會跳動。
+      const d = new Date(); d.setMinutes(b.minute || 0, 0, 0);
+      if(d.getTime() <= Date.now()) d.setHours(d.getHours() + 1);
+      b.mode = 'interval';
+      b.intervalMs = 3600*1000;
+      b.lastKill = d.getTime() - b.intervalMs;
+      delete b.minute;
+      b.fired = []; b.firedFor = null;
+    }
+    if(b.name === '監視者卡伊拉' && b.mode === 'interval' && !b.intervalMs){
+      b.intervalMs = 3600*1000;
+      b.lastKill = b.lastKill || Date.now();
     }
     if(b.name === '守護神將納赫瑪' && b.mode === 'weekly'
        && String(b.days) === '6,0' && String(b.times) === '21:00'){
@@ -552,6 +572,34 @@ function clockOf(ts){
   const prefix = dayDiff === 0 ? '' : dayDiff === 1 ? '明天 ' : `週${DAYS[d.getDay()]} `;
   return prefix + p(d.getHours()) + ':' + p(d.getMinutes());
 }
+function rtLen(b){ return b.intervalMs > 3600*1000 ? 6 : 4; }
+function fmtRt(digits, len){
+  const d = String(digits).replace(/\D/g, '').slice(-len).padStart(len, '0');
+  return len === 6
+    ? d.slice(0,2) + ':' + d.slice(2,4) + ':' + d.slice(4,6)
+    : d.slice(0,2) + ':' + d.slice(2,4);
+}
+function rtToSeconds(value, len){
+  const d = String(value).replace(/\D/g, '').slice(-len).padStart(len, '0');
+  return len === 6
+    ? (+d.slice(0,2))*3600 + (+d.slice(2,4))*60 + (+d.slice(4,6))
+    : (+d.slice(0,2))*60 + (+d.slice(2,4));
+}
+function secondsToRt(sec, len){
+  sec = Math.max(0, Math.floor(sec));
+  if(len === 6){
+    const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s2 = sec%60;
+    return fmtRt(String(h).padStart(2,'0') + String(m).padStart(2,'0') + String(s2).padStart(2,'0'), 6);
+  }
+  const m = Math.floor(sec/60), s2 = sec%60;
+  return fmtRt(String(m).padStart(2,'0') + String(s2).padStart(2,'0'), 4);
+}
+function cycleText(ms){
+  const m = Math.round((typeof ms === 'object' ? ms.intervalMs : ms) / 60000);
+  if(m % 60 === 0) return (m / 60) + ' 小時';
+  if(m > 60) return Math.floor(m/60) + ' 小時 ' + (m % 60) + ' 分';
+  return m + ' 分';
+}
 function ruleText(b){
   if(b.mode === 'interval'){
     const mins = Math.round(b.intervalMs/60000);
@@ -628,12 +676,10 @@ function render(){
         </div>
         ${b.mode==='interval' ? `
         <div class="editrow" data-edit hidden>
-          <div class="rtrow">
-            <span class="rtlabel">距離下次重生還有</span>
-            <input class="rt" data-h type="number" min="0" max="999" placeholder="時"><span>:</span>
-            <input class="rt" data-m type="number" min="0" max="59" placeholder="分"><span>:</span>
-            <input class="rt" data-s type="number" min="0" max="59" placeholder="秒">
-          </div>
+          <div class="rtlabel">距離下次重生還有（週期 ${cycleText(b)}）</div>
+          <input class="rtbig" data-rt type="text" inputmode="numeric"
+                 aria-label="剩餘時間" placeholder="${rtLen(b) === 6 ? '00:00:00' : '00:00'}">
+          <div class="rtpreview" data-preview></div>
           <div class="editacts">
             <button class="primary" data-act="applyRemain">套用</button>
             <button data-act="closeEdit">取消</button>
@@ -1187,6 +1233,48 @@ function toast(msg){
 }
 
 /* ---------- 互動 ---------- */
+/* 校時欄位的讀值與即時預覽 */
+function readRemain(box, b){
+  const el = box.querySelector('[data-rt]');
+  return rtToSeconds(el.value, rtLen(b)) * 1000;
+}
+function updateRtPreview(li, b){
+  const box = li.querySelector('[data-edit]');
+  if(!box) return;
+  const el = box.querySelector('[data-preview]');
+  const remain = readRemain(box, b);
+  if(remain <= 0){
+    el.textContent = '請輸入大於 0 的時間';
+    el.className = 'rtpreview warn';
+  }else if(remain > b.intervalMs){
+    el.textContent = `超過週期上限 ${cycleText(b)}`;
+    el.className = 'rtpreview warn';
+  }else{
+    el.textContent = '將於 ' + clockOf(Date.now() + remain) + ' 重生';
+    el.className = 'rtpreview';
+  }
+}
+document.getElementById('list').addEventListener('input', e=>{
+  if(!e.target.hasAttribute('data-rt')) return;
+  const li = e.target.closest('li');
+  const b = state.bosses.find(x => x.id === li.dataset.id);
+  if(!b) return;
+  // 碼表式輸入：打字時數字從右邊推進來，退格則整串右移
+  e.target.value = fmtRt(e.target.value, rtLen(b));
+  const end = e.target.value.length;
+  e.target.setSelectionRange(end, end);
+  updateRtPreview(li, b);
+});
+
+// 在欄位裡按 Enter 直接套用
+document.getElementById('list').addEventListener('keydown', e=>{
+  if(!e.target.hasAttribute('data-rt') || e.key !== 'Enter') return;
+  e.preventDefault();
+  const btn = e.target.closest('[data-edit]').querySelector('[data-act="applyRemain"]');
+  if(btn) btn.click();
+});
+
+
 document.getElementById('list').addEventListener('change', e=>{
   if(!e.target.classList.contains('onbox')) return;
   const b = state.bosses.find(x => x.id === e.target.closest('li').dataset.id);
@@ -1217,14 +1305,11 @@ document.getElementById('list').addEventListener('click', e=>{
     box.hidden = !box.hidden;
     if(!box.hidden){
       // 預設帶入目前推算的剩餘時間，方便微調
-      let left = Math.max(0, nextSpawn(b) - Date.now());
-      const h = Math.floor(left/3600000); left -= h*3600000;
-      const m = Math.floor(left/60000);   left -= m*60000;
-      box.querySelector('[data-h]').value = h;
-      box.querySelector('[data-m]').value = m;
-      box.querySelector('[data-s]').value = Math.floor(left/1000);
-      box.querySelector('[data-h]').focus();
-      box.querySelector('[data-h]').select();
+      const left = Math.max(0, nextSpawn(b) - Date.now());
+      const el = box.querySelector('[data-rt]');
+      el.value = secondsToRt(left/1000, rtLen(b));
+      updateRtPreview(e.target.closest('li'), b);
+      el.focus(); el.select();
     }
     return;
   }
@@ -1234,9 +1319,12 @@ document.getElementById('list').addEventListener('click', e=>{
   }
   if(btn.dataset.act === 'applyRemain'){
     const box = e.target.closest('li').querySelector('[data-edit]');
-    const num = sel => Math.max(0, parseInt(box.querySelector(sel).value, 10) || 0);
-    const remain = (num('[data-h]')*3600 + num('[data-m]')*60 + num('[data-s]')) * 1000;
+    const remain = readRemain(box, b);
     if(remain <= 0){ toast('剩餘時間要大於 0'); return; }
+    if(remain > b.intervalMs){
+      toast(`不能超過週期（${cycleText(b)}）`);
+      return;
+    }
     // 下次重生 = 現在 + 剩餘時間；反推擊殺時間讓週期對上
     b.lastKill = Date.now() + remain - b.intervalMs;
     b.fired = []; b.firedFor = null;
