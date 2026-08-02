@@ -24,6 +24,7 @@
   --track:rgba(0,0,0,.33);            /* 進度軌 */
   --hover:rgba(255,255,255,.06);
   --shadow:rgba(0,0,0,.35);
+  --tabbar-h:0px;                 /* 分頁列高度，觸控版面才有值 */
   --scrim:linear-gradient(180deg, rgba(12,8,18,.72) 0%, rgba(12,8,18,.85) 55%, rgba(12,8,18,.93) 100%);
   --glow:radial-gradient(1100px 620px at 78% -12%, rgba(70,40,100,.40) 0%, transparent 62%);
   --paper:#EDE6F2; --muted:#9C8AAE;
@@ -206,10 +207,20 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 .settings span{display:inline-flex;align-items:center;cursor:pointer}
 .settings label{display:inline;letter-spacing:0;text-transform:none;font-size:14px;margin:0;cursor:pointer}
 .empty{border:1px dashed var(--edge);border-radius:12px;padding:26px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.7}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--toast-fill);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--edge);padding:10px 16px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
+.toast{position:fixed;left:50%;bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-bottom));
+  z-index:30;transform:translateX(-50%);background:var(--toast-fill);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid var(--edge);padding:10px 18px;border-radius:99px;
+  font-size:13px;line-height:1.4;opacity:0;transition:opacity .25s;
+  pointer-events:none;max-width:calc(100vw - 32px);text-align:center;
+  box-shadow:0 6px 24px var(--shadow)}
 .toast.show{opacity:1;pointer-events:auto;cursor:pointer}
-.toast .undo{margin-left:12px;padding:4px 12px;font-size:12px;border-radius:99px;
-  border:1px solid var(--jade);color:var(--jade);min-height:30px}
+/* 帶有動作按鈕時改成一列：訊息在左、按鈕在右，用圓角矩形而非膠囊 */
+.toast.has-action{display:flex;align-items:center;gap:14px;
+  padding:9px 9px 9px 18px;border-radius:14px;text-align:left}
+.toast.has-action .msg{flex:1;min-width:0}
+.toast .undo{flex:0 0 auto;padding:6px 14px;font-size:12px;border-radius:9px;
+  border:1px solid var(--jade);color:var(--jade);min-height:34px;white-space:nowrap}
 .toast .undo:hover{background:var(--jade);color:#0C1F18}
 /* ── 再下一個：小卡（僅窄螢幕顯示）── */
 .cards{display:none;flex-direction:column;gap:10px;margin:-10px 0 20px}
@@ -265,6 +276,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .seg button{padding:11px 14px;min-height:48px}
   .seg button svg{width:19px;height:19px}
   .tabbar button{min-height:52px}
+  :root{--tabbar-h:52px}
   .herokill{top:14px;right:14px;padding:12px 18px;min-height:56px;font-size:16px}
   .hero .name,.hero .at{padding-right:112px}
   .rtbig{font-size:30px;padding:13px 8px}
@@ -406,6 +418,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .upcount{font-size:clamp(16px, calc(var(--vh) * 4.2), 23px)}
 
   .tabbar button{padding:6px 0 5px;font-size:10px;min-height:46px}
+  :root{--tabbar-h:46px}
   .tabbar button svg{width:18px;height:18px}
 }
 
@@ -424,6 +437,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   body[data-view="timer"] .upnext{padding:10px 14px}
   .eyebrow,.uplabel{font-size:9px;letter-spacing:.18em}
   .tabbar button{min-height:42px;padding:4px 0 3px}
+  :root{--tabbar-h:42px}
 }
 </style>
 </head>
@@ -1507,7 +1521,12 @@ document.getElementById('toast').addEventListener('click', ()=>{
 let toastTimer = null;
 function toast(msg, action){
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.innerHTML = '';
+  t.classList.toggle('has-action', !!action);
+  const span = document.createElement('span');
+  span.className = 'msg';
+  span.textContent = msg;
+  t.appendChild(span);
   if(action){
     const b = document.createElement('button');
     b.className = 'undo';
