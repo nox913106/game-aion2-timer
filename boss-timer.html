@@ -225,7 +225,10 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 .uplabel-same{color:var(--coral)}
 .uplabel-lead{color:var(--amber)}
 .uplabel{font-size:10px;letter-spacing:.24em;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
-.uprow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.uprow{display:flex;align-items:center;gap:11px}
+.upmain{flex:1;min-width:0}
+.upkill{flex:0 0 auto;padding:7px 13px;font-size:13px;min-height:38px}
+.upnext .onbox{flex:0 0 auto}
 .upmain{min-width:0}
 .upname{font-family:var(--display);font-size:19px;letter-spacing:.04em;line-height:1.2}
 .upat{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px}
@@ -822,8 +825,9 @@ function render(){
   list.innerHTML = '';
   document.getElementById('empty').hidden = state.bosses.length > 0;
 
+  // 已經在倒數頁的項目不重複列出；取消勾選或按「已擊殺」後就會回到這裡
   for(const [cat, title] of CATS){
-    const group = state.bosses.filter(b => (b.cat || 'boss') === cat)
+    const group = state.bosses.filter(b => (b.cat || 'boss') === cat && !onTimer.has(b.id))
                               .sort((a,b)=> nextSpawn(a) - nextSpawn(b));
     if(!group.length) continue;
 
@@ -885,9 +889,26 @@ function render(){
 
 const LABELS = { same:'同時', next:'再下一個', soon:'一小時內', lead:'即將提醒' };
 let cardsSig = '';
+let heroId = null;             // 主卡片的項目
+let onTimer = new Set();       // 目前顯示在倒數頁的項目 id
+let onTimerSig = '';
+
+/* 讓設定頁跟上倒數頁的組成。
+   關鍵：onTimer 由 tick 算出的結果直接推導，render() 只負責讀取。
+   先前讓 renderCards 去改 onTimer 再回頭呼叫 render()，
+   造成 tick → render → 排序改變 → tick 的循環相依，畫面就來回跳動。 */
+function syncPages(cards){
+  const ids = cards.map(c => c.x.b.id);
+  if(heroId) ids.push(heroId);
+  const sig = ids.slice().sort().join(',');
+  if(sig === onTimerSig) return;      // 沒變就不重繪，這是止住迴圈的關鍵
+  onTimerSig = sig;
+  onTimer = new Set(ids);
+  render();
+}
 function renderCards(cards){
   const wrap = document.getElementById('cards');
-  const sig = cards.map(c => c.kind + ':' + c.x.b.id).join('|');
+  const sig = (heroId || '-') + '#' + cards.map(c => c.kind + ':' + c.x.b.id).join('|');
   if(sig !== cardsSig){
     cardsSig = sig;
     wrap.innerHTML = '';
@@ -898,10 +919,14 @@ function renderCards(cards){
       el.innerHTML = `
         <div class="uplabel uplabel-${c.kind}"></div>
         <div class="uprow">
+          <input type="checkbox" class="onbox" checked
+                 aria-label="關閉 ${c.x.b.name} 的提醒">
           <div class="upmain">
             <div class="upname"></div>
             <div class="upat"></div>
           </div>
+          ${c.x.b.mode === 'interval'
+            ? '<button class="kill upkill" data-act="kill">已擊殺</button>' : ''}
           <div class="upcount">--:--:--</div>
         </div>`;
       el.querySelector('.uplabel').textContent = LABELS[c.kind];
@@ -935,22 +960,26 @@ function tick(){
   let head = null;
   const active = [];
   const due = [];
-  for(const li of document.querySelectorAll('li.boss')){
-    const b = state.bosses.find(x => x.id === li.dataset.id);
-    if(!b) continue;
+  // 一律走訪 state.bosses，不是走訪 DOM。
+  // 先前從 li.boss 反查，項目被設定頁過濾掉後就從計算中消失，
+  // 導致主卡片在兩個項目間來回跳動。DOM 更新只是附帶動作。
+  for(const b of state.bosses){
     const ns = nextSpawn(b);
     const left = ns - now;
     const st = stateOf(b, left);
 
-    li.className = 'boss state-' + st + (b.on === false ? ' off' : '');
-    li.querySelector('[data-count]').textContent = isFinite(ns) ? fmt(left) : '—';
-    li.querySelector('[data-meta]').textContent =
-      (left <= 0
-        ? (b.cat === 'event' ? '已開始 · ' : '已重生 · ')
-        : (b.cat === 'event' ? '開始於 ' : '重生於 ') + clockOf(ns) + ' · ')
-      + ruleText(b) + leadText(b, ns);
-    const prog = Math.max(0, Math.min(1, 1 - left / cycleMs(b)));
-    li.querySelector('[data-bar]').style.width = (prog*100) + '%';
+    const li = document.querySelector(`li.boss[data-id="${b.id}"]`);
+    if(li){
+      li.className = 'boss state-' + st + (b.on === false ? ' off' : '');
+      li.querySelector('[data-count]').textContent = isFinite(ns) ? fmt(left) : '—';
+      li.querySelector('[data-meta]').textContent =
+        (left <= 0
+          ? (b.cat === 'event' ? '已開始 · ' : '已重生 · ')
+          : (b.cat === 'event' ? '開始於 ' : '重生於 ') + clockOf(ns) + ' · ')
+        + ruleText(b) + leadText(b, ns);
+      const prog = Math.max(0, Math.min(1, 1 - left / cycleMs(b)));
+      li.querySelector('[data-bar]').style.width = (prog*100) + '%';
+    }
 
     if(b.on === false) continue;              // 沒勾選就只顯示倒數，不提醒
     const hit = alertCheck(b, ns, left);
@@ -964,28 +993,33 @@ function tick(){
 
   active.sort((a, b2) => a.ns - b2.ns);
 
-  // 決定要顯示哪些卡片：
-  //  同時    —— 與主卡片同一時刻的其他項目（常見於整點撞在一起）
-  //  再下一個 —— 第一個「時刻更晚」的項目
-  //  一小時內 —— 不分王或活動，只要一小時內就先擺上來
-  //  即將提醒 —— 有獨立提醒設定的活動，第一則提醒將在一小時內發生
+  // 倒數頁一律只收「一小時內」的項目，超過就留在設定頁。
+  //   同時    —— 與主卡片同一時刻（整點常常撞在一起）
+  //   再下一個 —— 第一個時刻更晚的項目，同樣受一小時上限約束
+  //   一小時內 —— 其餘一小時內的項目
+  //   即將提醒 —— 有獨立提醒設定者，第一則提醒將在一小時內發生
+  const HORIZON = 3600*1000;
   const cards = [];
   if(head){
     const seen = new Set([head.b.id]);
     const add = (kind, x) => { if(!seen.has(x.b.id)){ seen.add(x.b.id); cards.push({ kind, x }); } };
 
     active.forEach(x => { if(x.ns === head.ns) add('same', x); });
-    const second = active.find(x => x.ns > head.ns);
+    const second = active.find(x => x.ns > head.ns && x.left < HORIZON);
     if(second) add('next', second);
-    active.forEach(x => { if(x.left < 3600*1000) add('soon', x); });
+    active.forEach(x => { if(x.left < HORIZON) add('soon', x); });
     active.forEach(x => {
       if(!Array.isArray(x.b.leads) || !x.b.leads.length) return;
+      // 提醒本身要在一小時內響，才把它擺上來
       const maxLead = Math.max(...x.b.leads) * 60000;
-      if(x.left - maxLead <= 3600*1000) add('lead', x);
+      const untilFirstAlert = x.left - maxLead;
+      if(untilFirstAlert >= 0 && untilFirstAlert < HORIZON) add('lead', x);
     });
     cards.sort((a, b2) => a.x.ns - b2.x.ns);
   }
+  heroId = head ? head.b.id : null;
   renderCards(cards);
+  syncPages(cards);
 
   const hero = document.getElementById('hero');
   if(head){
@@ -1491,6 +1525,31 @@ function toast(msg, action){
 }
 
 /* ---------- 互動 ---------- */
+/* 倒數頁卡片上的操作：取消勾選送回設定頁、已擊殺重新計時 */
+document.getElementById('cards').addEventListener('change', e=>{
+  if(!e.target.classList.contains('onbox')) return;
+  const b = state.bosses.find(x => x.id === e.target.closest('.upnext').dataset.id);
+  if(!b) return;
+  b.on = e.target.checked;
+  b.fired = []; b.firedFor = null;
+  save(); tick(); render();
+  toast(`${b.name} 已移到設定頁`);
+});
+document.getElementById('cards').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-act="kill"]');
+  if(!btn) return;
+  const b = state.bosses.find(x => x.id === e.target.closest('.upnext').dataset.id);
+  if(!b || b.mode !== 'interval') return;
+  const prev = b.lastKill;
+  b.lastKill = Date.now();
+  b.fired = []; b.firedFor = null;
+  save(); tick(); render();
+  toast(`${b.name} 已重新計時`, {
+    label: '復原',
+    fn: ()=>{ b.lastKill = prev; b.fired = []; b.firedFor = null; save(); tick(); render(); }
+  });
+});
+
 /* 主卡片上的「已擊殺」：一鍵重置目前這一隻的倒數 */
 document.getElementById('heroKill').addEventListener('click', e=>{
   const b = state.bosses.find(x => x.id === e.currentTarget.dataset.id);
