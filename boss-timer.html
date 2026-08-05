@@ -714,6 +714,23 @@ async function load(){
   applyTheme(); applyView();
   render(); tick(); showStoreNote(); showNotifyNote();
 }
+// 校時這類「使用者明確送出」的變更立即寫入，
+// 避免在 300ms 節流窗內重新整理而遺失。
+async function saveNow(){
+  clearTimeout(saveTimer);
+  try{
+    const ok = await store.set(KEY, JSON.stringify(state));
+    if(!ok) throw new Error('no storage');
+    return true;
+  }catch(e){
+    storeMode = 'none';
+    if(!warnedOnce){
+      warnedOnce = true;
+      toast('這個瀏覽器不允許存檔，設定只保留到關閉分頁為止');
+    }
+    return false;
+  }
+}
 function save(){
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async ()=>{
@@ -736,7 +753,7 @@ function nextSpawn(b){
   if(b.mode === 'interval') return b.lastKill + b.intervalMs;
   if(b.mode === 'hourly'){
     const d = new Date();
-    d.setMinutes(b.minute, 0, 0);
+    d.setMinutes(b.minute, b.second || 0, 0);   // 支援秒偏移，校時才能精確
     if(d.getTime() <= now) d.setHours(d.getHours() + 1);
     return d.getTime();
   }
@@ -817,7 +834,11 @@ function ruleText(b){
     const mins = Math.round(b.intervalMs/60000);
     return mins % 60 === 0 ? `間隔 ${mins/60} 小時` : `間隔 ${mins} 分`;
   }
-  if(b.mode === 'hourly') return b.minute === 0 ? '每整點' : `每小時 ${String(b.minute).padStart(2,'0')} 分`;
+  if(b.mode === 'hourly'){
+    const mm = String(b.minute).padStart(2,'0'), ss = String(b.second || 0).padStart(2,'0');
+    if(!b.minute && !b.second) return '每整點';
+    return `每小時 ${mm}:${ss}`;
+  }
   if(b.mode === 'weekly') return '每週 ' + b.days.map(d=>DAYS[d]).join('、') + ' ' + b.times.join(' / ');
   return '每日 ' + b.times.join(' / ');
 }
@@ -1654,11 +1675,7 @@ function updateRtPreview(li, b){
     el.textContent = `超過週期上限 ${b.mode === 'hourly' ? '1 小時' : cycleText(b)}`;
     el.className = 'rtpreview warn';
   }else{
-    // hourly 會被對齊到整分，預覽必須套用同樣的換算才不會與結果不符
-    const at = b.mode === 'hourly'
-      ? Math.round((Date.now() + remain) / 60000) * 60000
-      : Date.now() + remain;
-    el.textContent = '將於 ' + clockOf(at) + ' 重生';
+    el.textContent = '將於 ' + clockOf(Date.now() + remain) + ' 重生';
     el.className = 'rtpreview';
   }
 }
@@ -1736,12 +1753,11 @@ document.getElementById('list').addEventListener('click', e=>{
       return;
     }
     if(b.mode === 'hourly'){
-      // 每整點模式沒有擊殺時間，改成調整「每小時的第幾分」。
-      // 重生時刻只能落在整分，因此把目標時刻四捨五入到最近的整分。
-      // 注意不能只看 getSeconds() 就進位——那會忽略當下的秒數而多算一分。
-      const target = Date.now() + remain;
-      const rounded = new Date(Math.round(target / 60000) * 60000);
-      b.minute = rounded.getMinutes();
+      // 每整點模式沒有擊殺時間，改成調整「每小時的第幾分幾秒」。
+      // 早期只存分鐘、秒數歸零，導致最多 ±30 秒誤差（輸入 10:00 卻剩 9:35）。
+      const target = new Date(Date.now() + remain);
+      b.minute = target.getMinutes();
+      b.second = target.getSeconds();
     }else{
       // 下次重生 = 現在 + 剩餘時間；反推擊殺時間讓週期對上
       b.lastKill = Date.now() + remain - b.intervalMs;
@@ -1749,8 +1765,15 @@ document.getElementById('list').addEventListener('click', e=>{
     b.fired = []; b.firedFor = null;
     box.hidden = true;
     editingId = null; onTimerSig = '';
-    save(); tick(); render();
-    toast(`${b.name} 將於 ${clockOf(nextSpawn(b))} 重生`);
+    tick(); render();
+    // 套用後該項目通常已回到倒數頁，停在設定頁會看不到變化，切回去
+    state.view = 'timer';
+    applyView();
+    tick();
+    const when = clockOf(nextSpawn(b));
+    saveNow().then(ok => toast(
+      ok ? `${b.name} 將於 ${when} 重生`
+         : `${b.name} 將於 ${when} 重生（未能存檔，重整後會還原）`));
     return;
   }
   if(btn.dataset.act === 'kill'){
