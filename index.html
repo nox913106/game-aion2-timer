@@ -123,6 +123,12 @@ h1 span{color:var(--muted);font-size:12px;letter-spacing:.2em;display:block;marg
   border:1px solid var(--coral);color:var(--coral);font-size:15px;font-weight:700;
   letter-spacing:.04em;background:transparent}
 .herokill span{font-size:10px;font-weight:400;letter-spacing:.12em;opacity:.75}
+.heroedit{position:absolute;top:16px;right:16px;z-index:2;padding:9px 14px;min-height:40px;
+  border-radius:9px;font-size:13px;color:var(--muted);border:1px solid var(--edge);background:transparent}
+.heroedit:hover{color:var(--paper);border-color:var(--muted)}
+/* 兩顆同時出現時，校時讓到已擊殺左邊 */
+.hero:has(.herokill:not([hidden])) .heroedit{right:auto;left:auto;
+  transform:translateX(calc(-100% - 8px));right:16px;position:absolute}
 .herokill:hover{background:var(--coral);color:#fff;border-color:var(--coral)}
 .herokill:active{transform:scale(.97)}
 .hero .name,.hero .at{padding-right:120px}
@@ -467,6 +473,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 
   <div class="hero state-far sec-timer" id="hero">
     <button class="herokill" id="heroKill" hidden>已擊殺<span>重新計時</span></button>
+    <button class="heroedit" id="heroEdit" hidden>校時</button>
     <div class="eyebrow">下一行程</div>
     <div class="name" id="heroName">載入中…</div>
     <div class="at" id="heroAt">&nbsp;</div>
@@ -771,7 +778,13 @@ function clockOf(ts){
   const prefix = dayDiff === 0 ? '' : dayDiff === 1 ? '明天 ' : `週${DAYS[d.getDay()]} `;
   return prefix + p(d.getHours()) + ':' + p(d.getMinutes());
 }
-function rtLen(b){ return b.intervalMs > 3600*1000 ? 6 : 4; }
+// 可校時的模式：擊殺後計時，以及每整點（實際重生常有偏移）
+function canEdit(b){ return b.mode === 'interval' || b.mode === 'hourly'; }
+function rtLen(b){
+  if(b.mode === 'hourly') return 4;                    // 週期一小時，分:秒 足夠
+  return b.intervalMs > 3600*1000 ? 6 : 4;
+}
+function editCycle(b){ return b.mode === 'hourly' ? 3600*1000 : b.intervalMs; }
 function fmtRt(digits, len){
   const d = String(digits).replace(/\D/g, '').slice(-len).padStart(len, '0');
   return len === 6
@@ -841,7 +854,7 @@ function render(){
 
   // 已經在倒數頁的項目不重複列出；取消勾選或按「已擊殺」後就會回到這裡
   for(const [cat, title] of CATS){
-    const group = state.bosses.filter(b => (b.cat || 'boss') === cat && !onTimer.has(b.id))
+    const group = state.bosses.filter(b => (b.cat || 'boss') === cat && (!onTimer.has(b.id) || b.id === editingId))
                               .sort((a,b)=> nextSpawn(a) - nextSpawn(b));
     if(!group.length) continue;
 
@@ -877,13 +890,14 @@ function render(){
         <div class="line2">
           <div class="meta" data-meta></div>
           <div class="acts">
-            ${b.mode==='interval' ? '<button class="kill" data-act="kill">已擊殺</button><button data-act="back">往前 5 分</button><button data-act="edit">校時</button>' : ''}
+            ${b.mode==='interval' ? '<button class="kill" data-act="kill">已擊殺</button><button data-act="back">往前 5 分</button>' : ''}
+            ${canEdit(b) ? '<button data-act="edit">校時</button>' : ''}
             <button class="ghost" data-act="del">刪除</button>
           </div>
         </div>
-        ${b.mode==='interval' ? `
+        ${canEdit(b) ? `
         <div class="editrow" data-edit hidden>
-          <div class="rtlabel">距離下次重生還有（週期 ${cycleText(b)}）</div>
+          <div class="rtlabel">距離下次重生還有${b.mode==='interval' ? `（週期 ${cycleText(b)}）` : ''}</div>
           <input class="rtbig" data-rt type="text" inputmode="numeric"
                  aria-label="剩餘時間" placeholder="${rtLen(b) === 6 ? '00:00:00' : '00:00'}">
           <div class="rtpreview" data-preview></div>
@@ -903,6 +917,7 @@ function render(){
 
 const LABELS = { same:'同時', next:'再下一個', soon:'一小時內', lead:'即將提醒' };
 let cardsSig = '';
+let editingId = null;          // 正在校時的項目，暫時不放進倒數頁
 let heroId = null;             // 主卡片的項目
 let onTimer = new Set();       // 目前顯示在倒數頁的項目 id
 let onTimerSig = '';
@@ -912,8 +927,8 @@ let onTimerSig = '';
    先前讓 renderCards 去改 onTimer 再回頭呼叫 render()，
    造成 tick → render → 排序改變 → tick 的循環相依，畫面就來回跳動。 */
 function syncPages(cards){
-  const ids = cards.map(c => c.x.b.id);
-  if(heroId) ids.push(heroId);
+  const ids = cards.map(c => c.x.b.id).filter(id => id !== editingId);
+  if(heroId && heroId !== editingId) ids.push(heroId);
   const sig = ids.slice().sort().join(',');
   if(sig === onTimerSig) return;      // 沒變就不重繪，這是止住迴圈的關鍵
   onTimerSig = sig;
@@ -941,6 +956,7 @@ function renderCards(cards){
           </div>
           ${c.x.b.mode === 'interval'
             ? '<button class="kill upkill" data-act="kill">已擊殺</button>' : ''}
+          ${canEdit(c.x.b) ? '<button class="upkill" data-act="goedit">校時</button>' : ''}
           <div class="upcount">--:--:--</div>
         </div>`;
       el.querySelector('.uplabel').textContent = LABELS[c.kind];
@@ -1047,6 +1063,9 @@ function tick(){
     const kb = document.getElementById('heroKill');
     kb.hidden = head.b.mode !== 'interval';      // 固定排程的活動沒有擊殺的概念
     kb.dataset.id = head.b.id;
+    const eb = document.getElementById('heroEdit');
+    eb.hidden = !canEdit(head.b);
+    eb.dataset.id = head.b.id;
     document.getElementById('heroFill').style.width =
       (Math.max(0, Math.min(1, 1 - head.left / cycleMs(head.b)))*100) + '%';
   }else{
@@ -1058,6 +1077,7 @@ function tick(){
     document.getElementById('heroCount').textContent = '--:--:--';
     document.getElementById('heroFill').style.width = '0%';
     document.getElementById('heroKill').hidden = true;
+    document.getElementById('heroEdit').hidden = true;
   }
 }
 
@@ -1555,6 +1575,11 @@ document.getElementById('cards').addEventListener('change', e=>{
   toast(`${b.name} 已移到設定頁`);
 });
 document.getElementById('cards').addEventListener('click', e=>{
+  const go = e.target.closest('button[data-act="goedit"]');
+  if(go){
+    goEdit(state.bosses.find(x => x.id === e.target.closest('.upnext').dataset.id));
+    return;
+  }
   const btn = e.target.closest('button[data-act="kill"]');
   if(!btn) return;
   const b = state.bosses.find(x => x.id === e.target.closest('.upnext').dataset.id);
@@ -1569,7 +1594,30 @@ document.getElementById('cards').addEventListener('click', e=>{
   });
 });
 
+/* 從倒數頁跳去校時：
+   項目正在倒數頁時清單裡沒有它，所以先切到設定頁，
+   再捲到該列並展開校時面板。 */
+function goEdit(b){
+  if(!b || !canEdit(b)) return;
+  // 項目在倒數頁時清單裡沒有它，先釘住讓它回到設定頁
+  editingId = b.id;
+  state.view = 'config';
+  applyView();
+  onTimerSig = '__editing__';     // 強制下次 syncPages 重算
+  tick();
+  render();
+  // render 完才展開，避免被 tick 內部觸發的那次 render 洗掉
+  const li = document.querySelector(`li.boss[data-id="${b.id}"]`);
+  if(!li) return;
+  const btn = li.querySelector('[data-act="edit"]');
+  if(btn) btn.click();
+  li.scrollIntoView({ block:'center', behavior:'smooth' });
+}
+
 /* 主卡片上的「已擊殺」：一鍵重置目前這一隻的倒數 */
+document.getElementById('heroEdit').addEventListener('click', ()=>{
+  goEdit(state.bosses.find(x => x.id === document.getElementById('heroEdit').dataset.id));
+});
 document.getElementById('heroKill').addEventListener('click', e=>{
   const b = state.bosses.find(x => x.id === e.currentTarget.dataset.id);
   if(!b || b.mode !== 'interval') return;
@@ -1602,8 +1650,8 @@ function updateRtPreview(li, b){
   if(remain <= 0){
     el.textContent = '請輸入大於 0 的時間';
     el.className = 'rtpreview warn';
-  }else if(remain > b.intervalMs){
-    el.textContent = `超過週期上限 ${cycleText(b)}`;
+  }else if(remain > editCycle(b)){
+    el.textContent = `超過週期上限 ${b.mode === 'hourly' ? '1 小時' : cycleText(b)}`;
     el.className = 'rtpreview warn';
   }else{
     el.textContent = '將於 ' + clockOf(Date.now() + remain) + ' 重生';
@@ -1671,21 +1719,32 @@ document.getElementById('list').addEventListener('click', e=>{
   }
   if(btn.dataset.act === 'closeEdit'){
     e.target.closest('li').querySelector('[data-edit]').hidden = true;
+    editingId = null; onTimerSig = ''; tick();
     return;
   }
   if(btn.dataset.act === 'applyRemain'){
     const box = e.target.closest('li').querySelector('[data-edit]');
     const remain = readRemain(box, b);
+    const cyc = editCycle(b);
     if(remain <= 0){ toast('剩餘時間要大於 0'); return; }
-    if(remain > b.intervalMs){
-      toast(`不能超過週期（${cycleText(b)}）`);
+    if(remain > cyc){
+      toast(`不能超過週期（${b.mode === 'hourly' ? '1 小時' : cycleText(b)}）`);
       return;
     }
-    // 下次重生 = 現在 + 剩餘時間；反推擊殺時間讓週期對上
-    b.lastKill = Date.now() + remain - b.intervalMs;
+    if(b.mode === 'hourly'){
+      // 每整點模式沒有擊殺時間，改成調整「每小時的第幾分」。
+      // 秒數不足一分時無條件進位，避免設定完馬上就過期。
+      const target = new Date(Date.now() + remain);
+      b.minute = target.getMinutes() + (target.getSeconds() > 0 ? 1 : 0);
+      if(b.minute > 59) b.minute = 0;
+    }else{
+      // 下次重生 = 現在 + 剩餘時間；反推擊殺時間讓週期對上
+      b.lastKill = Date.now() + remain - b.intervalMs;
+    }
     b.fired = []; b.firedFor = null;
     box.hidden = true;
-    save(); tick();
+    editingId = null; onTimerSig = '';
+    save(); tick(); render();
     toast(`${b.name} 將於 ${clockOf(nextSpawn(b))} 重生`);
     return;
   }

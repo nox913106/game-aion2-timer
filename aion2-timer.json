@@ -1,0 +1,187 @@
+{
+  "bosses": [
+    {
+      "id": "b1785238200963eyx8",
+      "cat": "boss",
+      "name": "監視者卡伊拉",
+      "loc": "艾雷修藍塔下層",
+      "mode": "hourly",
+      "fired": [
+        10
+      ],
+      "firedFor": 1785927600000,
+      "minute": 0
+    },
+    {
+      "id": "b1785238200963880z",
+      "cat": "boss",
+      "name": "精靈王阿格羅",
+      "loc": "希埃爾之翼群島／希埃爾右翼",
+      "mode": "interval",
+      "fired": [],
+      "firedFor": 1785969787330,
+      "intervalMs": 43200000,
+      "lastKill": 1785926587330
+    },
+    {
+      "id": "b1785238200963lc64",
+      "cat": "boss",
+      "name": "守護神將納赫瑪",
+      "loc": "艾雷修藍塔之根",
+      "mode": "weekly",
+      "fired": [],
+      "firedFor": 1786111200000,
+      "days": [
+        5,
+        0
+      ],
+      "times": [
+        "22:00"
+      ]
+    },
+    {
+      "id": "b1785238200963hj6g",
+      "cat": "boss",
+      "name": "神器戰爭 BOSS",
+      "loc": "神器戰爭開始 20 分後",
+      "mode": "weekly",
+      "fired": [],
+      "firedFor": 1785940200000,
+      "days": [
+        3,
+        6
+      ],
+      "times": [
+        "22:30"
+      ]
+    },
+    {
+      "id": "b1785238200963hdf5",
+      "cat": "event",
+      "name": "神器戰爭",
+      "loc": "深淵",
+      "mode": "weekly",
+      "fired": [],
+      "firedFor": 1785939000000,
+      "days": [
+        3,
+        6
+      ],
+      "times": [
+        "22:10"
+      ],
+      "leads": [
+        40,
+        30,
+        0
+      ]
+    },
+    {
+      "id": "b1785238200963r2wk",
+      "cat": "event",
+      "name": "深淵裂縫地帶",
+      "loc": "深淵",
+      "mode": "weekly",
+      "fired": [],
+      "firedFor": 1786024800000,
+      "days": [
+        2,
+        4
+      ],
+      "times": [
+        "22:00"
+      ],
+      "leads": [
+        30,
+        20,
+        0
+      ]
+    },
+    {
+      "id": "b1785238200963m5yt",
+      "cat": "event",
+      "name": "樹古慶典",
+      "loc": "每整點",
+      "mode": "hourly",
+      "fired": [],
+      "firedFor": null,
+      "minute": 0,
+      "on": false
+    },
+    {
+      "id": "b1785238200963tm53",
+      "cat": "event",
+      "name": "次元進攻",
+      "loc": "每整點半",
+      "mode": "hourly",
+      "fired": [],
+      "firedFor": null,
+      "minute": 30,
+      "on": false
+    },
+    {
+      "id": "b17852382009632hjd",
+      "cat": "event",
+      "name": "天魔裂縫",
+      "loc": "每 3 小時一場",
+      "mode": "schedule",
+      "fired": [],
+      "firedFor": null,
+      "times": [
+        "02:00",
+        "05:00",
+        "08:00",
+        "11:00",
+        "14:00",
+        "17:00",
+        "20:00",
+        "23:00"
+      ],
+      "on": false
+    },
+    {
+      "id": "b1785330759733",
+      "cat": "boss",
+      "name": "永恆卡爾吐亞",
+      "loc": "永恆之島",
+      "mode": "interval",
+      "fired": [],
+      "firedFor": 1785969717209,
+      "intervalMs": 43200000,
+      "lastKill": 1785926517209
+    },
+    {
+      "id": "b1785926806706",
+      "cat": "boss",
+      "name": "副軍團長比巴茲拉",
+      "loc": "耶爾特奈",
+      "mode": "interval",
+      "fired": [],
+      "firedFor": 1785969907276,
+      "intervalMs": 43200000,
+      "lastKill": 1785926707276
+    },
+    {
+      "id": "b1785926832917",
+      "cat": "boss",
+      "name": "第3部隊長卡爾寇提",
+      "loc": "耶爾特奈",
+      "mode": "interval",
+      "fired": [],
+      "firedFor": 1785969965697,
+      "intervalMs": 43200000,
+      "lastKill": 1785926765697
+    }
+  ],
+  "sound": true,
+  "notify": false,
+  "leads": [
+    10,
+    5,
+    0
+  ],
+  "volChime": 1.4,
+  "volAlarm": 1,
+  "theme": "system",
+  "view": "config"
+}
