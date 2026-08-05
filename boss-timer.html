@@ -1654,7 +1654,11 @@ function updateRtPreview(li, b){
     el.textContent = `超過週期上限 ${b.mode === 'hourly' ? '1 小時' : cycleText(b)}`;
     el.className = 'rtpreview warn';
   }else{
-    el.textContent = '將於 ' + clockOf(Date.now() + remain) + ' 重生';
+    // hourly 會被對齊到整分，預覽必須套用同樣的換算才不會與結果不符
+    const at = b.mode === 'hourly'
+      ? Math.round((Date.now() + remain) / 60000) * 60000
+      : Date.now() + remain;
+    el.textContent = '將於 ' + clockOf(at) + ' 重生';
     el.className = 'rtpreview';
   }
 }
@@ -1733,10 +1737,11 @@ document.getElementById('list').addEventListener('click', e=>{
     }
     if(b.mode === 'hourly'){
       // 每整點模式沒有擊殺時間，改成調整「每小時的第幾分」。
-      // 秒數不足一分時無條件進位，避免設定完馬上就過期。
-      const target = new Date(Date.now() + remain);
-      b.minute = target.getMinutes() + (target.getSeconds() > 0 ? 1 : 0);
-      if(b.minute > 59) b.minute = 0;
+      // 重生時刻只能落在整分，因此把目標時刻四捨五入到最近的整分。
+      // 注意不能只看 getSeconds() 就進位——那會忽略當下的秒數而多算一分。
+      const target = Date.now() + remain;
+      const rounded = new Date(Math.round(target / 60000) * 60000);
+      b.minute = rounded.getMinutes();
     }else{
       // 下次重生 = 現在 + 剩餘時間；反推擊殺時間讓週期對上
       b.lastKill = Date.now() + remain - b.intervalMs;
