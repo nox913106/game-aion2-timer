@@ -117,21 +117,30 @@ h1 span{color:var(--muted);font-size:12px;letter-spacing:.2em;display:block;marg
 .hero.state-soon .big{color:var(--amber)}
 .hero.state-now .big{color:var(--coral)}
 .hero .track{height:4px;background:var(--track);border-radius:99px;overflow:hidden;margin-top:16px}
-.herokill{position:absolute;top:16px;right:16px;z-index:2;
-  display:flex;flex-direction:column;align-items:center;gap:2px;
+.heroacts{display:flex;align-items:stretch;gap:8px;z-index:2}
+.heroon{align-self:center;width:24px;height:24px;flex:0 0 auto;margin:0 2px 0 0}
+.herokill{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   padding:11px 18px;min-height:52px;border-radius:10px;
   border:1px solid var(--coral);color:var(--coral);font-size:15px;font-weight:700;
   letter-spacing:.04em;background:transparent}
 .herokill span{font-size:10px;font-weight:400;letter-spacing:.12em;opacity:.75}
-.heroedit{position:absolute;top:16px;right:16px;z-index:2;padding:9px 14px;min-height:40px;
-  border-radius:9px;font-size:13px;color:var(--muted);border:1px solid var(--edge);background:transparent}
+.heroedit{padding:9px 14px;border-radius:10px;font-size:13px;color:var(--muted);
+  border:1px solid var(--edge);background:transparent;white-space:nowrap}
 .heroedit:hover{color:var(--paper);border-color:var(--muted)}
-/* 兩顆同時出現時，校時讓到已擊殺左邊 */
-.hero:has(.herokill:not([hidden])) .heroedit{right:auto;left:auto;
-  transform:translateX(calc(-100% - 8px));right:16px;position:absolute}
 .herokill:hover{background:var(--coral);color:#fff;border-color:var(--coral)}
 .herokill:active{transform:scale(.97)}
-.hero .name,.hero .at{padding-right:120px}
+/* 名稱與按鈕改用 grid 分欄，寬度自動讓位，
+   不再靠寫死的 padding-right 猜測按鈕有多寬（會把中文名稱擠斷行）。 */
+.hero{display:grid;grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"eyebrow acts" "name acts" "at acts" "big big" "track track";
+  align-items:start;column-gap:14px}
+.hero .eyebrow{grid-area:eyebrow}
+.hero .name{grid-area:name}
+.hero .at{grid-area:at}
+.hero .big{grid-area:big}
+.hero .track{grid-area:track}
+.heroacts{grid-area:acts;position:static;justify-self:end}
+.hero .name{overflow-wrap:break-word}
 .hero .fill{height:100%;width:0;background:var(--jade);transition:width .4s linear}
 .hero.state-soon .fill{background:var(--amber)}
 .hero.state-now .fill{background:var(--coral)}
@@ -241,6 +250,8 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
 .upnext.state-now .upcount{color:var(--coral)}
 .uplabel-same{color:var(--coral)}
 .uplabel-lead{color:var(--amber)}
+.uplabel-stale{color:var(--coral)}
+.upnext:has(.uplabel-stale){opacity:.72}
 .uplabel{font-size:10px;letter-spacing:.24em;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
 .uprow{display:flex;align-items:center;gap:11px}
 .upmain{flex:1;min-width:0}
@@ -284,7 +295,7 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .tabbar button{min-height:52px}
   :root{--tabbar-h:52px}
   .herokill{top:14px;right:14px;padding:12px 18px;min-height:56px;font-size:16px}
-  .hero .name,.hero .at{padding-right:112px}
+
   .rtbig{font-size:30px;padding:13px 8px}
   .editacts{gap:8px}
   .editacts button{flex:1;min-height:46px}
@@ -311,13 +322,13 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   .hero{padding:18px 16px 16px}
   .hero .name{font-size:22px}
   .herokill{padding:9px 12px;min-height:48px;font-size:14px}
-  .hero .name,.hero .at{padding-right:88px}
+
   .top{gap:8px}
   .bicon{width:34px;height:34px}
 }
 @media (max-width:380px){
   .herokill{padding:10px 14px;min-height:50px;font-size:15px}
-  .hero .name,.hero .at{padding-right:96px}
+
   .upcount{font-size:17px}
   .upname{font-size:17px}
 }
@@ -393,9 +404,9 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
     display:grid;
     grid-template-columns:minmax(0,1fr) auto auto;
     grid-template-areas:
-      "eyebrow big kill"
-      "name    big kill"
-      "at      big kill"
+      "eyebrow big acts"
+      "name    big acts"
+      "at      big acts"
       "track   track track";
     align-items:center;
     column-gap:16px;
@@ -408,8 +419,8 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
     font-size:clamp(32px, calc(var(--vh) * 10), 58px);
   }
   body[data-view="timer"] .hero .track{grid-area:track;margin-top:12px}
+  body[data-view="timer"] .heroacts{grid-area:acts;align-self:center}
   body[data-view="timer"] .herokill{
-    grid-area:kill;position:static;
     align-self:center;justify-self:end;
     min-height:clamp(46px, calc(var(--vh) * 12.5), 62px);
     font-size:clamp(14px, calc(var(--vh) * 3.5), 18px);
@@ -472,8 +483,12 @@ label{display:block;font-size:11px;letter-spacing:.16em;color:var(--muted);text-
   </div>
 
   <div class="hero state-far sec-timer" id="hero">
-    <button class="herokill" id="heroKill" hidden>已擊殺<span>重新計時</span></button>
-    <button class="heroedit" id="heroEdit" hidden>校時</button>
+    <div class="heroacts">
+      <input type="checkbox" class="onbox heroon" id="heroOn" checked
+             aria-label="關閉這個項目的提醒" title="取消勾選即停止提醒">
+      <button class="heroedit" id="heroEdit" hidden>校時</button>
+      <button class="herokill" id="heroKill" hidden>已擊殺<span>重新計時</span></button>
+    </div>
     <div class="eyebrow">下一行程</div>
     <div class="name" id="heroName">載入中…</div>
     <div class="at" id="heroAt">&nbsp;</div>
@@ -749,12 +764,12 @@ function save(){
 
 /* ---------- 時間計算 ---------- */
 function nextSpawn(b){
-  const now = Date.now();
+  const ref = Date.now();
   if(b.mode === 'interval') return b.lastKill + b.intervalMs;
   if(b.mode === 'hourly'){
-    const d = new Date();
+    const d = new Date(ref);
     d.setMinutes(b.minute, b.second || 0, 0);   // 支援秒偏移，校時才能精確
-    if(d.getTime() <= now) d.setHours(d.getHours() + 1);
+    if(d.getTime() <= ref) d.setHours(d.getHours() + 1);
     return d.getTime();
   }
   const span = b.mode === 'weekly' ? 8 : 2;
@@ -762,15 +777,16 @@ function nextSpawn(b){
   for(const t of b.times){
     const [h,m] = t.split(':').map(Number);
     for(let off = 0; off < span; off++){
-      const d = new Date();
+      const d = new Date(ref);
       d.setHours(h, m, 0, 0);
       d.setDate(d.getDate() + off);
       if(b.mode === 'weekly' && !b.days.includes(d.getDay())) continue;
-      if(d.getTime() > now) best = Math.min(best, d.getTime());
+      if(d.getTime() > ref) best = Math.min(best, d.getTime());
     }
   }
   return best;
 }
+
 function cycleMs(b){
   if(b.mode === 'interval') return b.intervalMs;
   if(b.mode === 'hourly') return 3600*1000;
@@ -861,6 +877,17 @@ function urgency(left){
   if(left < 10*60*1000)  return ' u10';   // 十分鐘內：黃
   return '';
 }
+// 逾期太久代表忘了按「已擊殺」，倒數數字已無參考價值。
+// 這種項目排到最後，把主卡片讓給真正接近的行程。
+function isStale(b, left){
+  if(left > 0) return false;
+  const cyc = b.mode === 'interval' ? b.intervalMs
+            : b.mode === 'hourly'   ? 3600*1000
+            : 0;
+  if(!cyc) return false;              // 固定排程會自動跳到下一場，不會逾期
+  return -left > cyc;                 // 逾期超過一個完整週期
+}
+
 function stateOf(b, left){
   if(left <= 0) return 'now';
   if(left <= (Math.max(0, ...effectiveLeads(b)) || 5)*60*1000) return 'soon';
@@ -936,7 +963,7 @@ function render(){
   }
 }
 
-const LABELS = { same:'同時', next:'再下一個', soon:'一小時內', lead:'即將提醒' };
+const LABELS = { same:'同時', next:'再下一個', soon:'一小時內', lead:'即將提醒', stale:'需要校時' };
 let cardsSig = '';
 let editingId = null;          // 正在校時的項目，暫時不放進倒數頁
 let heroId = null;             // 主卡片的項目
@@ -990,9 +1017,10 @@ function renderCards(cards){
     const el = wrap.children[i];
     if(!el) return;
     el.className = 'upnext state-' + c.x.st + urgency(c.x.left);
-    el.querySelector('.upcount').textContent = fmt(c.x.left);
+    el.querySelector('.upcount').textContent = c.x.stale ? '--:--:--' : fmt(c.x.left);
     const b = c.x.b;
-    let at = (b.loc ? b.loc + ' · ' : '') + clockOf(c.x.ns);
+    let at = c.x.stale ? '逾期太久，請按「校時」重新設定'
+                       : (b.loc ? b.loc + ' · ' : '') + clockOf(c.x.ns);
     if(c.kind === 'lead'){
       const t = leadText(b, c.x.ns).replace(' · ', '');
       if(t) at += '　' + t.trim();
@@ -1036,13 +1064,18 @@ function tick(){
     const hit = alertCheck(b, ns, left);
     if(hit) due.push(hit);
     if(isFinite(ns)){
-      active.push({ b, ns, left, st });
-      if(!head || ns < head.ns) head = { b, ns, left, st };
+      const item = { b, ns, left, st, stale: isStale(b, left) };
+      active.push(item);
+      if(!head || (head.stale && !item.stale) ||
+         (head.stale === item.stale && ns < head.ns)) head = item;
     }
   }
   fireBatch(due);
 
-  active.sort((a, b2) => a.ns - b2.ns);
+  active.sort((a, b2) => {
+    const sa = isStale(a.b, a.left) ? 1 : 0, sb = isStale(b2.b, b2.left) ? 1 : 0;
+    return sa !== sb ? sa - sb : a.ns - b2.ns;   // 逾期太久的一律排到最後
+  });
 
   // 倒數頁一律只收「一小時內」的項目，超過就留在設定頁。
   //   同時    —— 與主卡片同一時刻（整點常常撞在一起）
@@ -1055,10 +1088,11 @@ function tick(){
     const seen = new Set([head.b.id]);
     const add = (kind, x) => { if(!seen.has(x.b.id)){ seen.add(x.b.id); cards.push({ kind, x }); } };
 
-    active.forEach(x => { if(x.ns === head.ns) add('same', x); });
-    const second = active.find(x => x.ns > head.ns && x.left < HORIZON);
+    active.forEach(x => { if(!x.stale && x.ns === head.ns) add('same', x); });
+    const second = active.find(x => !x.stale && x.ns > head.ns && x.left < HORIZON);
     if(second) add('next', second);
-    active.forEach(x => { if(x.left < HORIZON) add('soon', x); });
+    active.forEach(x => { if(!x.stale && x.left < HORIZON) add('soon', x); });
+    active.forEach(x => { if(x.stale) add('stale', x); });   // 逾期的排最後，提醒去校時
     active.forEach(x => {
       if(!Array.isArray(x.b.leads) || !x.b.leads.length) return;
       // 提醒本身要在一小時內響，才把它擺上來
@@ -1066,7 +1100,10 @@ function tick(){
       const untilFirstAlert = x.left - maxLead;
       if(untilFirstAlert >= 0 && untilFirstAlert < HORIZON) add('lead', x);
     });
-    cards.sort((a, b2) => a.x.ns - b2.x.ns);
+    cards.sort((a, b2) => {
+      if(a.kind === 'stale' !== (b2.kind === 'stale')) return a.kind === 'stale' ? 1 : -1;
+      return a.x.ns - b2.x.ns;
+    });
   }
   heroId = head ? head.b.id : null;
   renderCards(cards);
@@ -1077,12 +1114,16 @@ function tick(){
     hero.className = 'hero sec-timer state-' + head.st + urgency(head.left);
     document.getElementById('heroName').textContent = head.b.name;
     document.getElementById('heroAt').textContent =
-      head.left <= 0
+      head.stale ? '逾期太久，請按「校時」重新設定'
+      : head.left <= 0
         ? (head.b.cat === 'event' ? '已經開始了' : '已經重生，快去')
         : (head.b.loc ? head.b.loc + ' · ' : '') + clockOf(head.ns);
-    document.getElementById('heroCount').textContent = fmt(head.left);
+    document.getElementById('heroCount').textContent = head.stale ? '--:--:--' : fmt(head.left);
+    const ob = document.getElementById('heroOn');
+    ob.dataset.id = head.b.id;
+    ob.checked = head.b.on !== false;
     const kb = document.getElementById('heroKill');
-    kb.hidden = head.b.mode !== 'interval';      // 固定排程的活動沒有擊殺的概念
+    kb.hidden = head.b.mode !== 'interval';      // 固定排程沒有擊殺的概念
     kb.dataset.id = head.b.id;
     const eb = document.getElementById('heroEdit');
     eb.hidden = !canEdit(head.b);
@@ -1606,13 +1647,10 @@ document.getElementById('cards').addEventListener('click', e=>{
   const b = state.bosses.find(x => x.id === e.target.closest('.upnext').dataset.id);
   if(!b || b.mode !== 'interval') return;
   const prev = b.lastKill;
-  b.lastKill = Date.now();
-  b.fired = []; b.firedFor = null;
+  b.lastKill = Date.now(); b.fired = []; b.firedFor = null;
   save(); tick(); render();
-  toast(`${b.name} 已重新計時`, {
-    label: '復原',
-    fn: ()=>{ b.lastKill = prev; b.fired = []; b.firedFor = null; save(); tick(); render(); }
-  });
+  toast(`${b.name} 已重新計時`, { label:'復原', fn:()=>{
+    b.lastKill = prev; b.fired = []; b.firedFor = null; save(); tick(); render(); } });
 });
 
 /* 從倒數頁跳去校時：
@@ -1639,21 +1677,24 @@ function goEdit(b){
 document.getElementById('heroEdit').addEventListener('click', ()=>{
   goEdit(state.bosses.find(x => x.id === document.getElementById('heroEdit').dataset.id));
 });
+document.getElementById('heroOn').addEventListener('change', e=>{
+  const b = state.bosses.find(x => x.id === e.currentTarget.dataset.id);
+  if(!b) return;
+  b.on = e.currentTarget.checked;
+  b.fired = []; b.firedFor = null;
+  save(); tick(); render();
+  toast(`${b.name} 已移到設定頁`);
+});
 document.getElementById('heroKill').addEventListener('click', e=>{
   const b = state.bosses.find(x => x.id === e.currentTarget.dataset.id);
   if(!b || b.mode !== 'interval') return;
   const prev = b.lastKill;                      // 記下舊值，誤按可以還原
-  b.lastKill = Date.now();
-  b.fired = []; b.firedFor = null;
+  b.lastKill = Date.now(); b.fired = []; b.firedFor = null;
   save(); render(); tick();
   toast(`${b.name} 已重新計時`, {
     label: '復原',
-    fn: ()=>{
-      b.lastKill = prev;
-      b.fired = []; b.firedFor = null;
-      save(); render(); tick();
-      toast(`${b.name} 已還原`);
-    }
+    fn: ()=>{ b.lastKill = prev; b.fired = []; b.firedFor = null;
+              save(); render(); tick(); toast(`${b.name} 已還原`); }
   });
 });
 
@@ -1777,8 +1818,12 @@ document.getElementById('list').addEventListener('click', e=>{
     return;
   }
   if(btn.dataset.act === 'kill'){
-    b.lastKill = Date.now(); b.warned = b.spawned = null;
-    toast(`${b.name} 重新計時`);
+    const prev = b.lastKill;
+    b.lastKill = Date.now(); b.fired = []; b.firedFor = null;
+    save(); tick(); render();
+    toast(`${b.name} 重新計時`, { label:'復原', fn:()=>{
+      b.lastKill = prev; b.fired = []; b.firedFor = null; save(); tick(); render(); } });
+    return;
   }
   if(btn.dataset.act === 'back'){
     b.lastKill -= 5*60*1000; b.warned = b.spawned = null;
