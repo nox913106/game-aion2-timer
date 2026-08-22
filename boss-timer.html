@@ -182,11 +182,28 @@ li.boss.state-now .bcount{color:var(--coral)}
 .rtrow{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .rtbig{font-family:var(--mono);font-size:26px;text-align:center;letter-spacing:.06em;
   padding:10px 8px;font-variant-numeric:tabular-nums}
-.rtsel{display:flex;gap:8px;align-items:flex-end}
-.rtsel label{display:flex;align-items:baseline;gap:4px;flex:1}
-.rtsel select{font-family:var(--mono);font-size:19px;text-align:center;padding:9px 4px;
-  min-height:46px;font-variant-numeric:tabular-nums}
-.rtsel span{font-size:12px;color:var(--muted);flex:0 0 auto}
+/* ── 滾輪選擇器 ──
+   用 CSS scroll-snap 做，沒有相依套件。
+   捲動容器高度固定為 5 格，上下各留 2 格內距讓首尾也能停在中央；
+   中央的選取帶是獨立的覆蓋層，不隨捲動移動。            */
+.rtsel{--wh:36px;position:relative;display:flex;gap:10px;justify-content:center;
+  padding:2px 0 4px}
+.wheelcol{flex:1;max-width:110px;text-align:center}
+.wheelcap{font-size:10px;letter-spacing:.18em;color:var(--muted);margin-bottom:4px}
+.wheelband{position:absolute;left:0;right:0;top:calc(18px + var(--wh) * 2);height:var(--wh);
+  border-top:1px solid var(--edge);border-bottom:1px solid var(--edge);
+  background:var(--hover);border-radius:8px;pointer-events:none;z-index:1}
+.wheel{height:calc(var(--wh) * 5);overflow-y:auto;scroll-snap-type:y mandatory;
+  padding:calc(var(--wh) * 2) 0;scrollbar-width:none;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;position:relative;z-index:2;
+  /* 上下淡出，強調中央那一格 */
+  -webkit-mask-image:linear-gradient(180deg,transparent,#000 26%,#000 74%,transparent);
+  mask-image:linear-gradient(180deg,transparent,#000 26%,#000 74%,transparent)}
+.wheel::-webkit-scrollbar{display:none}
+.wheelitem{height:var(--wh);line-height:var(--wh);scroll-snap-align:center;
+  font-family:var(--mono);font-size:20px;font-variant-numeric:tabular-nums;
+  color:var(--muted);opacity:.55;transition:opacity .15s,color .15s;cursor:pointer}
+.wheelitem.on{color:var(--paper);opacity:1;font-size:23px;font-weight:600}
 .rtpreview{font-size:12px;font-family:var(--mono);color:var(--jade)}
 .rtpreview.warn{color:var(--coral)}
 .rtlabel{font-size:11px;color:var(--muted);width:100%}
@@ -824,10 +841,10 @@ function clockOf(ts){
 // 可校時的模式：擊殺後計時，以及每整點（實際重生常有偏移）
 // 下拉選單取代手動輸入：手機上原生 select 是滾輪選擇器，
 // 不會叫出虛擬鍵盤，「套用」按鈕就不會被鍵盤蓋住。
-function optList(max){
+function wheelHtml(max){
   let out = '';
   for(let i = 0; i <= max; i++)
-    out += `<option value="${i}">${String(i).padStart(2,'0')}</option>`;
+    out += `<div class="wheelitem" data-v="${i}" role="option">${String(i).padStart(2,'0')}</div>`;
   return out;
 }
 function maxHours(b){
@@ -970,10 +987,17 @@ function render(){
         <div class="editrow" data-edit hidden>
           <div class="rtlabel">距離下次重生還有${b.mode==='interval' ? `（週期 ${cycleText(b)}）` : ''}</div>
           <div class="rtsel">
+            <div class="wheelband" aria-hidden="true"></div>
             ${maxHours(b) > 0 ? `
-            <label><select data-h>${optList(maxHours(b))}</select><span>時</span></label>` : ''}
-            <label><select data-m>${optList(59)}</select><span>分</span></label>
-            <label><select data-s>${optList(59)}</select><span>秒</span></label>
+            <div class="wheelcol"><div class="wheelcap">時</div>
+              <div class="wheel" data-h data-max="${maxHours(b)}" data-value="0"
+                   role="listbox" aria-label="時">${wheelHtml(maxHours(b))}</div></div>` : ''}
+            <div class="wheelcol"><div class="wheelcap">分</div>
+              <div class="wheel" data-m data-max="59" data-value="0"
+                   role="listbox" aria-label="分">${wheelHtml(59)}</div></div>
+            <div class="wheelcol"><div class="wheelcap">秒</div>
+              <div class="wheel" data-s data-max="59" data-value="0"
+                   role="listbox" aria-label="秒">${wheelHtml(59)}</div></div>
           </div>
           <div class="rtpreview" data-preview></div>
           <div class="editacts">
@@ -1741,18 +1765,39 @@ document.getElementById('heroKill').addEventListener('click', e=>{
 
 
 /* 校時欄位的讀值與即時預覽 */
+const WHEEL_H = 36;                       // 與 CSS 的 --wh 一致
+
 function readRemain(box, b){
-  const v = sel => { const el = box.querySelector(sel); return el ? +el.value : 0; };
+  const v = sel => { const el = box.querySelector(sel); return el ? +el.dataset.value : 0; };
   return (v('[data-h]')*3600 + v('[data-m]')*60 + v('[data-s]')) * 1000;
+}
+function setWheel(wheel, val, animate){
+  if(!wheel) return;
+  const max = +wheel.dataset.max;
+  const v = Math.max(0, Math.min(max, val));
+  wheel.dataset.value = v;
+  const top = v * WHEEL_H;
+  // 舊瀏覽器沒有 scrollTo 的選項式呼叫，退回直接設定 scrollTop
+  if(typeof wheel.scrollTo === 'function'){
+    try{ wheel.scrollTo({ top, behavior: animate ? 'smooth' : 'auto' }); }
+    catch(e){ wheel.scrollTop = top; }
+  }else{
+    wheel.scrollTop = top;
+  }
+  markWheel(wheel);
+}
+function markWheel(wheel){
+  const v = +wheel.dataset.value;
+  wheel.querySelectorAll('.wheelitem').forEach(el =>
+    el.classList.toggle('on', +el.dataset.v === v));
 }
 function setRemain(box, ms){
   const t = Math.max(0, Math.round(ms/1000));
   const h = box.querySelector('[data-h]');
-  const mm = box.querySelector('[data-m]'), ss = box.querySelector('[data-s]');
-  if(h){ h.value = Math.min(+h.lastChild.value, Math.floor(t/3600)); }
-  // 沒有「時」欄位時把小時併進分鐘（週期一小時內不會發生，保險用）
-  mm.value = Math.min(59, h ? Math.floor(t%3600/60) : Math.floor(t/60));
-  ss.value = t % 60;
+  setWheel(h, Math.floor(t/3600));
+  // 沒有「時」欄位時把小時併進分鐘
+  setWheel(box.querySelector('[data-m]'), h ? Math.floor(t%3600/60) : Math.floor(t/60));
+  setWheel(box.querySelector('[data-s]'), t % 60);
 }
 function updateRtPreview(li, b){
   const box = li.querySelector('[data-edit]');
@@ -1770,9 +1815,28 @@ function updateRtPreview(li, b){
     el.className = 'rtpreview';
   }
 }
-document.getElementById('list').addEventListener('change', e=>{
-  if(!e.target.matches('[data-h],[data-m],[data-s]')) return;
-  const li = e.target.closest('li');
+// scroll 事件不會冒泡，改在捕獲階段接收
+const wheelSettle = new WeakMap();
+document.getElementById('list').addEventListener('scroll', e=>{
+  const wheel = e.target;
+  if(!wheel.classList || !wheel.classList.contains('wheel')) return;
+  clearTimeout(wheelSettle.get(wheel));
+  wheelSettle.set(wheel, setTimeout(()=>{
+    const idx = Math.round(wheel.scrollTop / WHEEL_H);
+    wheel.dataset.value = Math.max(0, Math.min(+wheel.dataset.max, idx));
+    markWheel(wheel);
+    const li = wheel.closest('li');
+    const b = state.bosses.find(x => x.id === li.dataset.id);
+    if(b) updateRtPreview(li, b);
+  }, 90));
+}, true);
+
+// 直接點某一格也能選取
+document.getElementById('list').addEventListener('click', e=>{
+  const item = e.target.closest('.wheelitem');
+  if(!item) return;
+  setWheel(item.closest('.wheel'), +item.dataset.v, true);
+  const li = item.closest('li');
   const b = state.bosses.find(x => x.id === li.dataset.id);
   if(b) updateRtPreview(li, b);
 });
@@ -1799,6 +1863,7 @@ document.getElementById('list').addEventListener('click', e=>{
     toast(turnOn ? '這一組都開啟提醒了' : '這一組都關閉提醒了');
     return;
   }
+  if(e.target.closest('.wheelitem')) return;     // 滾輪由另一個處理器負責
   const btn = e.target.closest('button'); if(!btn) return;
   const id = e.target.closest('li').dataset.id;
   const b = state.bosses.find(x => x.id === id); if(!b) return;
