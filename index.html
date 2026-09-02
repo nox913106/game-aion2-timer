@@ -667,11 +667,11 @@ const PRESET = [
   { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'schedule',
     times:['00:00','04:00','08:00','12:00','16:00','20:00'] },
   { cat:'boss', name:'幻夢卡西亞', loc:'裴爾特朗', mode:'interval', hours:5 },
-  { cat:'boss', name:'精靈王阿格羅', loc:'希埃爾之翼群島／希埃爾右翼', mode:'interval', hours:12 },
-  { cat:'boss', name:'永恆卡爾吐亞', loc:'永恆之島', mode:'interval', hours:12 },
-  { cat:'boss', name:'副軍團長比巴茲拉', loc:'耶爾特奈', mode:'interval', hours:12 },
-  { cat:'boss', name:'第3部隊長卡爾寇提', loc:'耶爾特奈', mode:'interval', hours:12 },
-  { cat:'boss', name:'軍團長拉格塔', loc:'裴爾特朗', mode:'interval', hours:12 },
+  { cat:'boss', name:'精靈王阿格羅', loc:'希埃爾之翼群島／希埃爾右翼', mode:'schedule', times:['00:00','12:00'] },
+  { cat:'boss', name:'永恆卡爾吐亞', loc:'永恆之島', mode:'schedule', times:['00:00','12:00'] },
+  { cat:'boss', name:'副軍團長比巴茲拉', loc:'耶爾特奈', mode:'schedule', times:['00:00','12:00'] },
+  { cat:'boss', name:'第3部隊長卡爾寇提', loc:'耶爾特奈', mode:'schedule', times:['00:00','12:00'] },
+  { cat:'boss', name:'軍團長拉格塔', loc:'裴爾特朗', mode:'schedule', times:['00:00','12:00'] },
   { cat:'boss', name:'守護神將納赫瑪', loc:'艾雷修藍塔之根', mode:'weekly', days:[5,0], times:['22:00'] },
   { cat:'boss', name:'神器戰爭 BOSS', loc:'神器戰爭開始 20 分後', mode:'weekly', days:[3,6], times:['22:30'] },
 
@@ -714,6 +714,8 @@ async function load(){
     const r = await store.get(KEY);
     if(r && r.value) state = Object.assign(state, JSON.parse(r.value));
   }catch(e){ storeMode = 'none'; }
+  const FIXED12 = ['精靈王阿格羅','永恆卡爾吐亞','副軍團長比巴茲拉',
+                   '第3部隊長卡爾寇提','軍團長拉格塔'];
   const EVENT_NAMES = ['神器戰爭','深淵裂縫地帶','深淵裂縫戰爭','樹古慶典','次元進攻','次元裂縫','天魔裂縫'];
   for(const b of state.bosses){
     if(b.name === '次元裂縫') b.name = '次元進攻';        // 舊存檔自動改名
@@ -726,6 +728,17 @@ async function load(){
       b.fired = []; b.firedFor = null;
     }
     if(!b.cat) b.cat = EVENT_NAMES.includes(b.name) ? 'event' : 'boss';
+    // 12 小時王改為固定排程（00:00 / 12:00）。
+    // 反推 offsetSec 讓下次重生時刻與原本一致，切換當下不會跳動。
+    if(FIXED12.includes(b.name) && b.mode === 'interval'){
+      const next = b.lastKill + b.intervalMs;
+      b.mode = 'schedule';
+      b.times = ['00:00','12:00'];
+      const d = new Date(next); d.setHours(d.getHours() < 12 ? 0 : 12, 0, 0, 0);
+      b.offsetSec = Math.round((next - d.getTime()) / 1000);
+      delete b.intervalMs; delete b.lastKill;
+      b.fired = []; b.firedFor = null;
+    }
     if(b.name === '監視者卡伊拉' && b.mode !== 'schedule'){
       // 改為固定 4 小時排程，自每日 00:00 起算。
       // 方向只有這一條，避免與舊規則互相抵銷（先前踩過這個坑）。
