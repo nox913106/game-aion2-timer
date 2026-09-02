@@ -664,7 +664,9 @@ let pickedDays = [6, 0];
 let saveTimer = null;
 
 const PRESET = [
-  { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'hourly', minute:0 },
+  { cat:'boss', name:'監視者卡伊拉', loc:'艾雷修藍塔下層', mode:'schedule',
+    times:['00:00','04:00','08:00','12:00','16:00','20:00'] },
+  { cat:'boss', name:'幻夢卡西亞', loc:'裴爾特朗', mode:'interval', hours:5 },
   { cat:'boss', name:'精靈王阿格羅', loc:'希埃爾之翼群島／希埃爾右翼', mode:'interval', hours:12 },
   { cat:'boss', name:'永恆卡爾吐亞', loc:'永恆之島', mode:'interval', hours:12 },
   { cat:'boss', name:'副軍團長比巴茲拉', loc:'耶爾特奈', mode:'interval', hours:12 },
@@ -724,11 +726,12 @@ async function load(){
       b.fired = []; b.firedFor = null;
     }
     if(!b.cat) b.cat = EVENT_NAMES.includes(b.name) ? 'event' : 'boss';
-    if(b.name === '監視者卡伊拉' && b.mode !== 'hourly'){
-      // 還原為固定每整點。方向只有這一條，避免與其他規則互相抵銷。
-      b.mode = 'hourly';
-      b.minute = 0;
-      delete b.intervalMs; delete b.lastKill;
+    if(b.name === '監視者卡伊拉' && b.mode !== 'schedule'){
+      // 改為固定 4 小時排程，自每日 00:00 起算。
+      // 方向只有這一條，避免與舊規則互相抵銷（先前踩過這個坑）。
+      b.mode = 'schedule';
+      b.times = ['00:00','04:00','08:00','12:00','16:00','20:00'];
+      delete b.intervalMs; delete b.lastKill; delete b.minute; delete b.second;
       b.fired = []; b.firedFor = null;
     }
     if(b.name === '守護神將納赫瑪' && b.mode === 'weekly'
@@ -799,16 +802,19 @@ function nextSpawn(b){
     if(d.getTime() <= ref) d.setHours(d.getHours() + 1);
     return d.getTime();
   }
+  // offsetSec：整體平移所有時刻，用來吸收實際重生的秒級偏移
+  const shift = (b.offsetSec || 0) * 1000;
   const span = b.mode === 'weekly' ? 8 : 2;
   let best = Infinity;
   for(const t of b.times){
     const [h,m] = t.split(':').map(Number);
-    for(let off = 0; off < span; off++){
+    for(let off = -1; off < span; off++){
       const d = new Date(ref);
       d.setHours(h, m, 0, 0);
       d.setDate(d.getDate() + off);
       if(b.mode === 'weekly' && !b.days.includes(d.getDay())) continue;
-      if(d.getTime() > ref) best = Math.min(best, d.getTime());
+      const ts = d.getTime() + shift;
+      if(ts > ref) best = Math.min(best, ts);
     }
   }
   return best;
@@ -848,16 +854,15 @@ function wheelHtml(max){
   return out;
 }
 function maxHours(b){
-  if(b.mode === 'hourly') return 0;            // 週期一小時，不需要「時」
-  return Math.max(0, Math.floor(b.intervalMs / 3600000) - 0);
+  return Math.floor(editCycle(b) / 3600000);   // 週期一小時以內就不顯示「時」
 }
 
-function canEdit(b){ return b.mode === 'interval' || b.mode === 'hourly'; }
+function canEdit(b){ return b.mode === 'interval' || b.mode === 'hourly' || b.mode === 'schedule'; }
 function rtLen(b){
   if(b.mode === 'hourly') return 4;                    // 週期一小時，分:秒 足夠
   return b.intervalMs > 3600*1000 ? 6 : 4;
 }
-function editCycle(b){ return b.mode === 'hourly' ? 3600*1000 : b.intervalMs; }
+function editCycle(b){ return b.mode === 'interval' ? b.intervalMs : cycleMs(b); }
 function fmtRt(digits, len){
   const d = String(digits).replace(/\D/g, '').slice(-len).padStart(len, '0');
   return len === 6
@@ -886,6 +891,11 @@ function cycleText(ms){
   return m + ' 分';
 }
 function ruleText(b){
+  if(b.mode === 'schedule' && b.offsetSec){
+    const o = b.offsetSec, sign = o > 0 ? '+' : '−', a = Math.abs(o);
+    const mm = Math.floor(a/60), ss = a % 60;
+    return `每 ${Math.round(24/b.times.length)} 小時一場（${sign}${mm ? mm+'分' : ''}${ss}秒）`;
+  }
   if(b.mode === 'interval'){
     const mins = Math.round(b.intervalMs/60000);
     return mins % 60 === 0 ? `間隔 ${mins/60} 小時` : `間隔 ${mins} 分`;
@@ -1892,7 +1902,22 @@ document.getElementById('list').addEventListener('click', e=>{
       toast(`不能超過週期（${b.mode === 'hourly' ? '1 小時' : cycleText(b)}）`);
       return;
     }
-    if(b.mode === 'hourly'){
+    if(b.mode === 'schedule'){
+      // 找出離目標時刻最近的「原始」排程時點，兩者差距即為整體偏移
+      const target = Date.now() + remain;
+      let base = null, gap = Infinity;
+      for(const t of b.times){
+        const [hh,mm] = t.split(':').map(Number);
+        for(let off = -1; off <= 1; off++){
+          const d = new Date(target);
+          d.setHours(hh, mm, 0, 0);
+          d.setDate(d.getDate() + off);
+          const g = Math.abs(d.getTime() - target);
+          if(g < gap){ gap = g; base = d.getTime(); }
+        }
+      }
+      b.offsetSec = Math.round((target - base) / 1000);
+    }else if(b.mode === 'hourly'){
       // 每整點模式沒有擊殺時間，改成調整「每小時的第幾分幾秒」。
       // 早期只存分鐘、秒數歸零，導致最多 ±30 秒誤差（輸入 10:00 卻剩 9:35）。
       const target = new Date(Date.now() + remain);
