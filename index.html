@@ -1168,7 +1168,10 @@ function tick(){
 
     // 同時刻的項目併成一張卡，整點常常三項一起出現，分開列會佔掉整個畫面
     const sameOnes = active.filter(x => !x.stale && x.ns === head.ns && x.b.id !== head.b.id);
-    if(sameOnes.length){
+    if(sameOnes.length === 1){
+      // 只有一項就不是群組，照一般卡片處理，才有校時與已擊殺可按
+      add('same', sameOnes[0]);
+    }else if(sameOnes.length > 1){
       sameOnes.forEach(x => seen.add(x.b.id));
       cards.push({ kind:'same', x:sameOnes[0], group:sameOnes });
     }
