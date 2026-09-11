@@ -193,7 +193,7 @@ li.boss.state-now .bcount{color:var(--coral)}
 .wheelband{position:absolute;left:0;right:0;top:calc(18px + var(--wh) * 2);height:var(--wh);
   border-top:1px solid var(--edge);border-bottom:1px solid var(--edge);
   background:var(--hover);border-radius:8px;pointer-events:none;z-index:1}
-.wheel{height:calc(var(--wh) * 5);overflow-y:auto;scroll-snap-type:y mandatory;
+.wheel{height:calc(var(--wh) * 5);overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:auto;
   padding:calc(var(--wh) * 2) 0;scrollbar-width:none;
   -webkit-overflow-scrolling:touch;overscroll-behavior:contain;position:relative;z-index:2;
   /* 上下淡出，強調中央那一格 */
@@ -862,10 +862,19 @@ function clockOf(ts){
 // 可校時的模式：擊殺後計時，以及每整點（實際重生常有偏移）
 // 下拉選單取代手動輸入：手機上原生 select 是滾輪選擇器，
 // 不會叫出虛擬鍵盤，「套用」按鈕就不會被鍵盤蓋住。
+// 循環滾輪：把選項重複數份串成長帶，滑到頭尾時無動畫跳回中央那一份，
+// 視覺上就是 59 之後接回 00 的無縫循環。
+function wheelReps(count){
+  // 至少 5 份：快速甩動時單次慣性可能跨過上百格，份數太少會滑到真正的邊界
+  let r = Math.max(5, Math.ceil(240 / count));
+  return r % 2 ? r : r + 1;            // 取奇數，才有正中央的那一份
+}
 function wheelHtml(max){
+  const count = max + 1, reps = wheelReps(count);
   let out = '';
-  for(let i = 0; i <= max; i++)
-    out += `<div class="wheelitem" data-v="${i}" role="option">${String(i).padStart(2,'0')}</div>`;
+  for(let r = 0; r < reps; r++)
+    for(let i = 0; i < count; i++)
+      out += `<div class="wheelitem" data-v="${i}" role="option">${String(i).padStart(2,'0')}</div>`;
   return out;
 }
 function maxHours(b){
@@ -1016,12 +1025,15 @@ function render(){
             ${maxHours(b) > 0 ? `
             <div class="wheelcol"><div class="wheelcap">時</div>
               <div class="wheel" data-h data-max="${maxHours(b)}" data-value="0"
+                   data-count="${maxHours(b)+1}" data-reps="${wheelReps(maxHours(b)+1)}"
                    role="listbox" aria-label="時">${wheelHtml(maxHours(b))}</div></div>` : ''}
             <div class="wheelcol"><div class="wheelcap">分</div>
               <div class="wheel" data-m data-max="59" data-value="0"
+                   data-count="60" data-reps="${wheelReps(60)}"
                    role="listbox" aria-label="分">${wheelHtml(59)}</div></div>
             <div class="wheelcol"><div class="wheelcap">秒</div>
               <div class="wheel" data-s data-max="59" data-value="0"
+                   data-count="60" data-reps="${wheelReps(60)}"
                    role="listbox" aria-label="秒">${wheelHtml(59)}</div></div>
           </div>
           <div class="rtpreview" data-preview></div>
@@ -1799,12 +1811,31 @@ function readRemain(box, b){
   const v = sel => { const el = box.querySelector(sel); return el ? +el.dataset.value : 0; };
   return (v('[data-h]')*3600 + v('[data-m]')*60 + v('[data-s]')) * 1000;
 }
+function wheelCenter(wheel){                 // 中央那一份的起始索引
+  const count = +wheel.dataset.count, reps = +wheel.dataset.reps;
+  return count * Math.floor(reps / 2);
+}
 function setWheel(wheel, val, animate){
   if(!wheel) return;
-  const max = +wheel.dataset.max;
-  const v = Math.max(0, Math.min(max, val));
+  const count = +wheel.dataset.count, reps = +wheel.dataset.reps;
+  const v = ((Math.round(val) % count) + count) % count;   // 超出範圍就繞回來
   wheel.dataset.value = v;
-  const top = v * WHEEL_H;
+
+  // 找「離目前位置最近」的那一個，而不是一律跳到中央副本，
+  // 否則從 59 點選 00 會平滑捲過整整一圈，看起來像倒退。
+  const cur  = Math.round(wheel.scrollTop / WHEEL_H);
+  const curV = ((cur % count) + count) % count;
+  let delta = v - curV;
+  if(delta >  count / 2) delta -= count;                   // 往前繞比較近
+  if(delta < -count / 2) delta += count;                   // 往後繞比較近
+  let target = cur + delta;
+
+  // 只有真的滑到邊界外才回中，而且回中一律不做動畫
+  const needRecenter = target < count || target >= count * (reps - 1);
+  if(needRecenter) target = wheelCenter(wheel) + v;
+  animate = animate && !needRecenter;
+
+  const top = target * WHEEL_H;
   // 舊瀏覽器沒有 scrollTo 的選項式呼叫，退回直接設定 scrollTop
   if(typeof wheel.scrollTo === 'function'){
     try{ wheel.scrollTo({ top, behavior: animate ? 'smooth' : 'auto' }); }
@@ -1850,9 +1881,14 @@ document.getElementById('list').addEventListener('scroll', e=>{
   if(!wheel.classList || !wheel.classList.contains('wheel')) return;
   clearTimeout(wheelSettle.get(wheel));
   wheelSettle.set(wheel, setTimeout(()=>{
+    const count = +wheel.dataset.count, reps = +wheel.dataset.reps;
     const idx = Math.round(wheel.scrollTop / WHEEL_H);
-    wheel.dataset.value = Math.max(0, Math.min(+wheel.dataset.max, idx));
+    const val = ((idx % count) + count) % count;
+    wheel.dataset.value = val;
     markWheel(wheel);
+    // 快滑到頭或尾時，無動畫跳回中央副本，使用者察覺不到接縫
+    if(idx < count || idx >= count * (reps - 1))
+      wheel.scrollTop = (wheelCenter(wheel) + val) * WHEEL_H;
     const li = wheel.closest('li');
     const b = state.bosses.find(x => x.id === li.dataset.id);
     if(b) updateRtPreview(li, b);
