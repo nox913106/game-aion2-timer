@@ -677,6 +677,8 @@ const PRESET = [
 
   { cat:'event', name:'神器戰爭', loc:'深淵', mode:'weekly', days:[3,6], times:['22:10'], leads:[40,30,0] },
   { cat:'event', name:'深淵裂縫地帶', loc:'深淵', mode:'weekly', days:[2,4], times:['22:00'], leads:[30,20,0] },
+  { cat:'event', name:'時空裂縫爭奪戰', loc:'斐爾特朗／亞爾特蓋德',
+    mode:'weekly', days:[1,4,6], times:['20:00','23:00'] },
   { cat:'event', name:'樹古慶典', loc:'每整點', mode:'hourly', minute:0 },
   { cat:'event', name:'次元進攻', loc:'每整點半', mode:'hourly', minute:30 },
   { cat:'event', name:'天魔裂縫', loc:'每 3 小時一場', mode:'schedule',
@@ -716,7 +718,7 @@ async function load(){
   }catch(e){ storeMode = 'none'; }
   const FIXED12 = ['精靈王阿格羅','永恆卡爾吐亞','副軍團長比巴茲拉',
                    '第3部隊長卡爾寇提','軍團長拉格塔'];
-  const EVENT_NAMES = ['神器戰爭','深淵裂縫地帶','深淵裂縫戰爭','樹古慶典','次元進攻','次元裂縫','天魔裂縫'];
+  const EVENT_NAMES = ['時空裂縫爭奪戰', '神器戰爭','深淵裂縫地帶','深淵裂縫戰爭','樹古慶典','次元進攻','次元裂縫','天魔裂縫'];
   for(const b of state.bosses){
     if(b.name === '次元裂縫') b.name = '次元進攻';        // 舊存檔自動改名
     if(b.name === '深淵裂縫戰爭') b.name = '深淵裂縫地帶';
