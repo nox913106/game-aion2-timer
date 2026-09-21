@@ -1366,11 +1366,13 @@ function fire(msg, kind){
 }
 
 /* ---------- 音效 ----------
-   設計方向：管風琴音栓 × 空襲警報
-   - 音色全部用正弦波疊出泛音列（基音／八度／十二度／超八度／混合音栓），
-     亮度來自高次泛音而不是方波鋸齒波的削波，所以聽起來亮但不刮耳
-   - 辨識度來自緩慢的滑音，這是空襲警報的核心特徵
-   - 輸出經過一段合成的教堂殘響，讓聲音有空間感、尾巴收得漂亮       */
+   設計方向：乾淨的鐘，一點雜音都不留
+   - 全部由正弦波相加而成。沒有白噪音、沒有鋸齒波、沒有鼓皮與上升音效，
+     所以不會有沙沙聲，也不會有削波帶來的刮耳感
+   - 每個音只疊四個諧音（基音／八度／十二度／雙八度），高次泛音衰減得比
+     基音快，這是真實鐘體的行為，聽起來清透而且好辨識
+   - 不用人工殘響。原本的殘響是拿亂數噪音當脈衝響應合成的，疊上十幾個
+     聲部之後就是一層霧；空間感改由音符本身的長衰減與彼此的間隔來撐   */
 let audioCtx = null;
 let playing = [];
 let busIn = null, masterGain = null;
@@ -1381,95 +1383,70 @@ function stopSound(){
   playing = [];
 }
 
-// 用衰減噪音合成脈衝響應，當作教堂殘響
-function makeIR(seconds, decay){
-  const rate = audioCtx.sampleRate, len = Math.floor(rate * seconds);
-  const buf = audioCtx.createBuffer(2, len, rate);
-  for(let ch = 0; ch < 2; ch++){
-    const d = buf.getChannelData(ch);
-    for(let i = 0; i < len; i++){
-      d[i] = (Math.random()*2 - 1) * Math.pow(1 - i/len, decay);
-    }
-  }
-  return buf;
-}
-
 function audio(){
   if(busIn) return busIn;
   busIn = audioCtx.createGain();
 
-  const lp = audioCtx.createBiquadFilter();          // 只削掉真正尖銳的超高頻
-  lp.type = 'lowpass'; lp.frequency.value = 11000; lp.Q.value = 0.4;
+  // 只修掉正弦波疊加後可能出現的極高頻毛邊，不改變音色
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 9000; lp.Q.value = 0.3;
 
-  const comp = audioCtx.createDynamicsCompressor();  // 疊很多層也不會爆
-  comp.threshold.value = -16; comp.knee.value = 14; comp.ratio.value = 6;
-  comp.attack.value = 0.006; comp.release.value = 0.3;
-
-  const conv = audioCtx.createConvolver();
-  conv.buffer = makeIR(1.7, 2.8);                    // 尾巴短一點，音符之間才留得住縫隙
-  const wet = audioCtx.createGain(); wet.gain.value = 0.22;
-  const dry = audioCtx.createGain(); dry.gain.value = 0.92;
+  // 壓縮器只當保險絲：門檻放高、比例放小，正常播放時幾乎不作用，
+  // 才不會出現原本那種一直被壓下去又彈回來的呼吸聲
+  const comp = audioCtx.createDynamicsCompressor();
+  comp.threshold.value = -8; comp.knee.value = 6; comp.ratio.value = 4;
+  comp.attack.value = 0.01; comp.release.value = 0.25;
 
   masterGain = audioCtx.createGain();
   masterGain.gain.value = 0.9;
 
-  // 兩條獨立的音量匯流排：水晶杯提示音走 chimeIn，最後警報走 alarmIn
+  // 兩條獨立的音量匯流排：提示音走 chimeIn，最後警報走 alarmIn
   chimeIn = audioCtx.createGain(); chimeIn.gain.value = state.volChime ?? 1;
   alarmIn = audioCtx.createGain(); alarmIn.gain.value = state.volAlarm ?? 1;
   chimeIn.connect(busIn); alarmIn.connect(busIn);
 
-  busIn.connect(lp);
-  lp.connect(dry);  dry.connect(comp);
-  lp.connect(conv); conv.connect(wet); wet.connect(comp);
+  busIn.connect(lp); lp.connect(comp);
   comp.connect(masterGain); masterGain.connect(audioCtx.destination);
   return busIn;
 }
 // 目前這一次播放要走哪一條匯流排
 function out(){ return activeBus || chimeIn || busIn; }
 
-// 音栓配置：[泛音倍率, 音量比]。含第 3、5 泛音（十二度與大三度），
-// 這是管風琴混合音栓聽起來「金亮」的來源
-const STOPS = [[1,1.0],[2,0.55],[3,0.30],[4,0.24],[5,0.11],[6,0.13],[8,0.08]];
-const STOPS_LIGHT = [[1,1.0],[2,0.52],[3,0.28],[4,0.20]];   // 快速音符用，省振盪器
-const STOPS_MIN   = [[1,1.0],[2,0.45]];                     // 內聲部用，最省
+/* ── 最小單位：一個正弦振盪器配一條包絡，沒有濾波器也沒有噪音 ── */
+function sine(t0, f, peak, dur, attack){
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(f, t0);
+  const p = Math.max(0.0002, peak);
+  const atk = Math.min(attack == null ? 0.005 : attack, dur * 0.4);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(p, t0 + atk);       // 快速起音＝敲擊感
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);  // 指數衰減＝自然的尾巴
+  o.connect(g); g.connect(out());
+  o.start(t0); o.stop(t0 + dur + 0.02);
+  playing.push(o);
+}
 
-function organ(t0, dur, f0, opt){
-  const { peak=0.2, glideTo=null, attack=0.08, release=0.25, detune=6,
-          light=false, min=false } = opt || {};
-  const rel = Math.min(release, dur*0.45);
-  const atk = Math.min(attack, dur*0.45);
-  for(const [ratio, amp] of (min ? STOPS_MIN : light ? STOPS_LIGHT : STOPS)){
-    // 低音層多疊一個微離調的振盪器，模仿顫音栓的厚度
-    for(const cents of ((ratio <= 2 && detune) ? [0, detune] : [0])){
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = 'sine';
-      o.detune.value = cents;
-      o.frequency.setValueAtTime(f0*ratio, t0);
-      if(glideTo) o.frequency.linearRampToValueAtTime(glideTo*ratio, t0 + dur);
-      const p = Math.max(0.0002, peak * amp * (cents ? 0.55 : 1));
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.linearRampToValueAtTime(p, t0 + atk);
-      g.gain.setValueAtTime(p, t0 + dur - rel);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      o.connect(g); g.connect(out());
-      o.start(t0); o.stop(t0 + dur + 0.03);
-      playing.push(o);
-    }
+/* ── 鐘：[泛音倍率, 音量比, 衰減比] ──
+   高泛音只佔少量音量且先消失，剩下基音收尾，所以亮而不吵            */
+const BELL = [[1, 1.00, 1.00], [2, 0.40, 0.60], [3, 0.14, 0.40], [4, 0.07, 0.26]];
+function bell(t0, f0, peak, dur){
+  for(const [ratio, amp, decay] of BELL){
+    sine(t0, f0 * ratio, peak * amp, dur * decay, 0.004);
   }
 }
 
-// 水晶杯敲擊：玻璃的清脆來自「非諧和」泛音——泛音不是整數倍，
-// 而是 2.76、5.40、8.93 這種比例，加上極快的起音與長衰減
-const GLASS = [[1,1.0,1.00],[2.76,0.34,0.55],[5.40,0.15,0.32],[8.93,0.07,0.20]];
-function glass(t0, f0, peak){
-  for(const [ratio, amp, decay] of GLASS){
+/* ── 長音：給警報收尾的和弦鋪底，起音收音都做成斜坡，不會有爆音 ── */
+function pad(t0, dur, f0, peak){
+  for(const [ratio, amp] of [[1, 1.0], [2, 0.32], [3, 0.10]]){
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
     o.type = 'sine';
     o.frequency.value = f0 * ratio;
     const p = Math.max(0.0002, peak * amp);
-    const dur = 1.6 * decay;
+    const atk = Math.min(0.12, dur * 0.3), rel = Math.min(1.1, dur * 0.55);
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(p, t0 + 0.002);      // 幾乎瞬間起音＝敲擊感
+    g.gain.linearRampToValueAtTime(p, t0 + atk);
+    g.gain.setValueAtTime(p, t0 + dur - rel);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     o.connect(g); g.connect(out());
     o.start(t0); o.stop(t0 + dur + 0.03);
@@ -1477,101 +1454,16 @@ function glass(t0, f0, peak){
   }
 }
 
+// 音高表（D 小調，與最後的和弦一致）
+const P = {
+  D2: 73.42,  D3: 146.83, A3: 220.00, D4: 293.66, F4: 349.23,
+  A4: 440.00, D5: 587.33, F5: 698.46, A5: 880.00,
+  C6: 1046.50, D6: 1174.66, F6: 1396.91, A6: 1760.00
+};
 
-/* ── 噪音來源：鼓皮敲擊、上升音效都靠它 ── */
-let _noiseBuf = null;
-function noiseBuffer(){
-  if(_noiseBuf) return _noiseBuf;
-  const len = audioCtx.sampleRate * 2;
-  _noiseBuf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-  const d = _noiseBuf.getChannelData(0);
-  for(let i = 0; i < len; i++) d[i] = Math.random()*2 - 1;
-  return _noiseBuf;
-}
-function noise(t0, dur, opt){
-  const { peak=0.1, type='bandpass', freq=2000, freqEnd=null, q=0.8, attack=0.005 } = opt || {};
-  const src = audioCtx.createBufferSource();
-  src.buffer = noiseBuffer(); src.loop = true;
-  const f = audioCtx.createBiquadFilter();
-  f.type = type; f.Q.value = q;
-  f.frequency.setValueAtTime(freq, t0);
-  if(freqEnd) f.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
-  const g = audioCtx.createGain();
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.linearRampToValueAtTime(Math.max(0.0002, peak), t0 + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  src.connect(f); f.connect(g); g.connect(out());
-  src.start(t0); src.stop(t0 + dur + 0.02);
-  playing.push(src);
-}
-
-/* ── 太鼓：音高瞬間下墜的正弦波 + 一記噪音當鼓皮 ── */
-function drum(t0, f0, peak, decay){
-  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-  o.type = 'sine';
-  o.frequency.setValueAtTime(f0 * 3.0, t0);
-  o.frequency.exponentialRampToValueAtTime(f0, t0 + 0.055);
-  g.gain.setValueAtTime(Math.max(0.0002, peak), t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
-  o.connect(g); g.connect(out());
-  o.start(t0); o.stop(t0 + decay + 0.02);
-  playing.push(o);
-  noise(t0, 0.045, { peak: peak*0.30, type:'bandpass', freq:1500, q:1.1 });
-}
-
-/* ── 銅管：鋸齒波 + 開啟的濾波器包絡，「咬」就是濾波器打開的瞬間 ── */
-function brass(t0, dur, f, peak){
-  for(const det of [-8, 8]){
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    const lp = audioCtx.createBiquadFilter();
-    o.type = 'sawtooth'; o.detune.value = det; o.frequency.value = f;
-    lp.type = 'lowpass'; lp.Q.value = 1.1;
-    lp.frequency.setValueAtTime(f*1.4, t0);
-    lp.frequency.linearRampToValueAtTime(Math.min(8000, f*8), t0 + 0.075);
-    lp.frequency.linearRampToValueAtTime(Math.min(5000, f*4), t0 + dur);
-    const p = Math.max(0.0002, peak*0.5);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(p, t0 + 0.028);
-    g.gain.setValueAtTime(p, t0 + dur*0.72);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(lp); lp.connect(g); g.connect(out());
-    o.start(t0); o.stop(t0 + dur + 0.03);
-    playing.push(o);
-  }
-}
-
-/* ── 弦樂碎弓：短促鋸齒波，靠密集重複製造摩擦感 ── */
-function strings(t0, dur, f, peak){
-  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-  const lp = audioCtx.createBiquadFilter();
-  o.type = 'sawtooth'; o.frequency.value = f;
-  lp.type = 'lowpass'; lp.frequency.value = 3200; lp.Q.value = 0.7;
-  const p = Math.max(0.0002, peak);
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.linearRampToValueAtTime(p, t0 + 0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(lp); lp.connect(g); g.connect(out());
-  o.start(t0); o.stop(t0 + dur + 0.02);
-  playing.push(o);
-}
-
-/* ── 次低頻下墜：衝擊瞬間胸口那一下 ── */
-function subDrop(t0, f0, f1, dur, peak){
-  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-  o.type = 'sine';
-  o.frequency.setValueAtTime(f0, t0);
-  o.frequency.exponentialRampToValueAtTime(f1, t0 + dur*0.6);
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.linearRampToValueAtTime(Math.max(0.0002, peak), t0 + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g); g.connect(out());
-  o.start(t0); o.stop(t0 + dur + 0.02);
-  playing.push(o);
-}
-
-// 10 分：水晶杯三連敲，重複三組
-// 5 分：水晶杯五連敲，重複五組
-// 最後警報：原創的哥德式管風琴動機，低音踏板 + 漸強上行，時間到收和弦
+// 10 分：三音上行的鐘，敲兩組
+// 5 分：四音上行、更快更亮，敲三組
+// 最後警報：兩音交替的鐘聲催促，最後收在一個 D 小調和弦上
 function beep(kind, opt){
   const preview = opt && opt.preview;
   try{
@@ -1585,111 +1477,49 @@ function beep(kind, opt){
     if(preview){
       // 試聽用的短版，只夠確認音量
       if(kind === 'alarm'){
-        // 短版：加速鼓點 + 一記銅管和弦 + 衝擊，只夠確認音量
-        let dt = 0, dgap = 0.30;
-        while(dt < 1.2){ drum(t + dt, 58, 0.36, 0.28); dt += dgap; dgap *= 0.86; }
-        noise(t, 1.3, { peak:0.11, type:'bandpass', freq:280, freqEnd:7000, q:1.4, attack:0.9 });
-        const tEnd = t + 1.6;
-        subDrop(tEnd, 92, 34, 1.6, 0.42);
-        drum(tEnd, 46, 0.5, 0.8);
-        noise(tEnd, 1.1, { peak:0.14, type:'highpass', freq:3600, q:0.6, attack:0.004 });
-        [[73.42,0.20],[146.83,0.17],[293.66,0.15],[349.23,0.14],[587.33,0.12]]
-          .forEach(([f, p], n) => brass(tEnd + n*0.012, 2.0 - n*0.06, f, p));
+        [P.A5, P.D6, P.A5, P.D6].forEach((f, i) => bell(t + i*0.38, f, 0.26, 1.5));
+        const tEnd = t + 1.7;
+        [P.D4, P.F4, P.A4, P.D5].forEach((f, n) => pad(tEnd + n*0.01, 2.0, f, 0.11));
+        bell(tEnd, P.D5, 0.24, 2.2);
       }else{
-        [1568.0, 1760.0, 1975.5].forEach((f, i) => glass(t + i*0.26, f, 0.30));
+        [P.C6, 1318.51, 1568.0].forEach((f, i) => bell(t + i*0.30, f, 0.26, 1.5));
       }
       return;
     }
 
     if(kind === 'soft'){
-      // 三連敲 × 三組，音高微微上行，像杯緣被依序敲過
-      const notes = [1568.0, 1760.0, 1975.5];            // G6 A6 B6
-      for(let grp = 0; grp < 3; grp++){
-        for(let i = 0; i < 3; i++){
-          glass(t + grp*1.6 + i*0.26, notes[i], 0.30);
-        }
+      // 三音上行 × 兩組，間隔留得寬，聽起來像是輕輕提醒一聲
+      const notes = [P.C6, 1318.51, 1568.0];          // C6 E6 G6
+      for(let grp = 0; grp < 2; grp++){
+        notes.forEach((f, i) => bell(t + grp*1.5 + i*0.30, f, 0.26, 1.6));
       }
 
     }else if(kind === 'urgent'){
-      // 五連敲 × 五組，比 10 分那組更快更亮，音高一路爬上去
-      const notes = [1568.0, 1760.0, 1975.5, 2093.0, 2349.3];
-      for(let grp = 0; grp < 5; grp++){
-        for(let i = 0; i < 5; i++){
-          glass(t + grp*1.9 + i*0.19, notes[i], 0.28 + grp*0.02);
-        }
+      // 四音上行 × 三組，比 10 分那組快一點、高一點，衰減短一點
+      const notes = [P.C6, 1318.51, 1568.0, 2093.0];  // C6 E6 G6 C7
+      for(let grp = 0; grp < 3; grp++){
+        notes.forEach((f, i) => bell(t + grp*1.4 + i*0.21, f, 0.24 + grp*0.02, 1.2));
       }
 
     }else{
-      const SPAN = 10;
-      // ── 音高表（D 小調）──
-      const D1=36.71, D2=73.42, A1=55.00, Bb1=58.27, G1=49.00;
-      const D3=146.83, F3=174.61, A3=220.00, Bb3=233.08, C4=261.63,
-            D4=293.66, E4=329.63, F4=349.23, G4=392.00, A4=440.00,
-            Bb4=466.16, C5=523.25, D5=587.33, F5=698.46, A5=880.00, D6=1174.66;
-
-      const CUT = 9.62;          // 衝擊前的靜默切點
-      const GAP = SPAN - CUT;    // 0.38 秒的空白，落點才有重量
-
-      // ── 層 1：太鼓，間隔等比收緊（整段張力的骨架）──
-      // 注意：間隔必須有下限，否則等比級數收斂、while 永遠跑不完
-      let dt = 0, dgap = 0.78;
-      for(let i = 0; i < 400 && dt < CUT; i++){
-        const k = dt / CUT;
-        drum(t + dt, 62 - k*14, 0.34 + k*0.30, 0.42 - k*0.16);
-        if(i % 2 === 1 && k > 0.45) drum(t + dt + dgap*0.5, 78, 0.14, 0.16);  // 中段加入切分
-        dt += dgap;
-        dgap = Math.max(0.09, dgap*0.90);   // 每一擊快 10%，收到 0.09 秒為止
+      // ── 催促段：A5 與 D6 交替，間隔慢慢收緊、音量慢慢推上去 ──
+      let bt = 0, gap = 0.52;
+      const HITS = 10;
+      for(let i = 0; i < HITS; i++){
+        const k = i / (HITS - 1);
+        bell(t + bt, i % 2 ? P.D6 : P.A5, 0.22 + k*0.10, 1.4);
+        if(k > 0.5) bell(t + bt, i % 2 ? P.D5 : P.A4, 0.07, 1.0);  // 後半加一層低八度加重
+        bt += gap;
+        gap = Math.max(0.30, gap * 0.94);
       }
 
-      // ── 層 2：低頻長音鋪底，從頭撐到切點 ──
-      const droneStops = [[D1, 0.16], [D2, 0.13]];
-      droneStops.forEach(([f, p]) => organ(t, CUT, f, { peak:p, attack:1.2, release:0.5 }));
-
-      // ── 層 3：弦樂碎弓，2.6 秒進場，越後面越密越高 ──
-      const bowPat = [D5, D5, F5, D5];
-      let bt = 2.6, bgap = 0.13;
-      for(let j = 0; j < 400 && bt < CUT; j++){
-        const k = (bt - 2.6) / (CUT - 2.6);
-        const accent = (j % 4 === 0) ? 1.5 : 1;
-        strings(t + bt, bgap*0.6, bowPat[j % bowPat.length] * (k > 0.6 ? 2 : 1),
-                (0.055 + k*0.055) * accent);
-        bt += bgap;
-        bgap = Math.max(0.055, bgap*0.985);   // 碎弓逐漸加密
-      }
-
-      // ── 層 4：銅管和弦，時值遞減（和聲節奏加速）──
-      const prog = [
-        [[D4, F4, A4],  D2],   // Dm
-        [[Bb3, D4, F4], Bb1],  // Bb
-        [[G4, Bb4, D5], G1],   // Gm
-        [[A4, C5, E4],  A1],   // A
-        [[D4, F4, A4],  D2],   // Dm
-        [[A4, C5, E4],  A1]    // A → 準備解決
-      ];
-      let ct = 4.2, clen = 0.95;
-      prog.forEach(([notes, bass], n) => {
-        if(ct >= CUT) return;
-        const k = n / (prog.length - 1);
-        const dur = Math.min(clen, CUT - ct);
-        brass(t + ct, dur*0.92, bass*2, 0.16 + k*0.06);
-        notes.forEach((f, m) => brass(t + ct + m*0.01, dur*0.88, f, 0.13 + k*0.05));
-        ct += clen;
-        clen *= 0.82;
-      });
-
-      // ── 層 5：上升音效，最後 2.6 秒把濾波器一路開到頂 ──
-      noise(t + CUT - 2.6, 2.6, {
-        peak: 0.13, type:'bandpass', freq: 260, freqEnd: 7800, q: 1.4, attack: 1.6
-      });
-
-      // ── 層 6：切點靜默 0.38 秒，然後衝擊 ──
-      const tEnd = t + SPAN;
-      subDrop(tEnd, 92, 34, 1.9, 0.42);                       // 胸口那一下
-      drum(tEnd, 46, 0.5, 0.9);
-      noise(tEnd, 1.3, { peak:0.14, type:'highpass', freq:3600, q:0.6, attack:0.004 });
-      [[D2,0.20],[D3,0.17],[A3,0.15],[D4,0.15],[F4,0.14],[A4,0.13],[D5,0.12],[A5,0.08],[D6,0.05]]
-        .forEach(([f, p], n) => brass(tEnd + n*0.012, 2.6 - n*0.06, f, p));
-      organ(tEnd, 3.2, D2, { peak:0.12, attack:0.03, release:1.9 });   // 管風琴留一層當殘響底
+      // ── 落點：短暫留白後收在 D 小調和弦，鐘聲敲頭、長音鋪底 ──
+      const tEnd = t + bt + 0.25;
+      [P.D4, P.F4, P.A4, P.D5, P.F5].forEach((f, n) => pad(tEnd + n*0.012, 3.2, f, 0.12 - n*0.01));
+      pad(tEnd, 3.4, P.D3, 0.10);
+      pad(tEnd, 3.4, P.D2, 0.07);                     // 低八度撐住，但不轟
+      bell(tEnd, P.D5, 0.26, 2.8);
+      bell(tEnd + 0.02, P.A5, 0.16, 2.4);
     }
   }catch(e){}
 }
