@@ -673,9 +673,9 @@ const PRESET = [
   { cat:'boss', name:'第3部隊長卡爾寇提', loc:'耶爾特奈', mode:'schedule', times:['00:00','12:00'] },
   { cat:'boss', name:'軍團長拉格塔', loc:'裴爾特朗', mode:'schedule', times:['00:00','12:00'] },
   { cat:'boss', name:'守護神將納赫瑪', loc:'艾雷修藍塔之根', mode:'weekly', days:[5,0], times:['22:00'] },
-  { cat:'boss', name:'神器戰爭 BOSS', loc:'神器戰爭開始 20 分後', mode:'weekly', days:[3,6], times:['22:30'] },
+  { cat:'boss', name:'神器戰爭 BOSS', loc:'艾雷修藍塔下層／中層（神器戰爭開始 15 分後）', mode:'weekly', days:[3,6], times:['21:45'] },
 
-  { cat:'event', name:'神器戰爭', loc:'深淵', mode:'weekly', days:[3,6], times:['22:10'], leads:[40,30,0] },
+  { cat:'event', name:'神器戰爭', loc:'深淵', mode:'weekly', days:[3,6], times:['21:30'], leads:[40,30,0] },
   { cat:'event', name:'深淵裂縫地帶', loc:'深淵', mode:'weekly', days:[2,4], times:['22:00'], leads:[30,20,0] },
   { cat:'event', name:'時空裂縫爭奪戰', loc:'斐爾特朗／亞爾特蓋德',
     mode:'weekly', days:[1,4,6], times:['20:00','23:00'] },
@@ -754,6 +754,15 @@ async function load(){
     if(b.name === '守護神將納赫瑪' && b.mode === 'weekly'
        && String(b.days) === '6,0' && String(b.times) === '21:00'){
       b.days = [5,0]; b.times = ['22:00']; b.fired = []; b.firedFor = null;
+    }
+    // 9/30 改版：神器占領戰提前到 21:30，深淵首領改為 21:45 出現。
+    // 只改仍是舊預設時刻的項目，使用者自訂過的不動。
+    if(b.name === '神器戰爭' && b.mode === 'weekly' && String(b.times) === '22:10'){
+      b.times = ['21:30']; b.fired = []; b.firedFor = null;
+    }
+    if(b.name === '神器戰爭 BOSS' && b.mode === 'weekly' && String(b.times) === '22:30'){
+      b.times = ['21:45']; b.fired = []; b.firedFor = null;
+      if(b.loc === '神器戰爭開始 20 分後') b.loc = '艾雷修藍塔下層／中層（神器戰爭開始 15 分後）';
     }
   }
   if(!Array.isArray(state.leads)) state.leads = [10, 5, 0];
